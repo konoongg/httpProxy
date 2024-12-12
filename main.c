@@ -95,16 +95,16 @@ int init_sig_handlers() {
 
 
 void print_help() {
-  printf("\n\n");
-  printf("use makefile for build\n");
-  printf("To run the application, use: ./httpProxy\n");
-  printf("--port - The port on which the proxy listens. Default is 8080 \n");
-  printf("--max-client-threads - The maximum number of working threads (size of the client connection pool). Default is 4.\n");
-  printf("--help - Displays a message on how to run the proxy, possible flags, and their descriptions \n");
-  printf("--cache-initial-size - Initial cache size. Default is 1MB. format [value][kb| mb | b]\n");
-  printf("--cache-max-size - Maximum cache size. Default is 10MB. format [value][kb| mb | b]\n");
-  printf("--cache-ttl - Cache entry time to live in seconds. Default is 5 seconds\n");
-  printf("\n\n");
+    printf("\n\n");
+    printf("use makefile for build\n");
+    printf("To run the application, use: ./httpProxy\n");
+    printf("--port | -p - The port on which the proxy listens. Default is 8080 \n");
+    printf("--max-client-threads | -t  - The maximum number of working threads (size of the client connection pool). Default is 4.\n");
+    printf("--help | -h - Displays a message on how to run the proxy, possible flags, and their descriptions \n");
+    printf("--cache-initial-size | -i  - Initial cache size. Default is 1MB. format [value][kb| mb | b]\n");
+    printf("--cache-max-size | -m - Maximum cache size. Default is 10MB. format [value][kb| mb | b]\n");
+    printf("--cache-ttl | -l - Cache entry time to live in seconds. Default is 5 seconds\n");
+    printf("\n\n");
 }
 
 //reads a number and returns it if it was successfully read and lies within the specified range;
