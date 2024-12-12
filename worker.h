@@ -13,7 +13,6 @@
 
 
 #define MAX_CONNECTIONS 1024
-#define MAX_PROCCESSING_EV 100
 
 
 int init_workers(int count_worker, int listen_port, pthread_t* tids);

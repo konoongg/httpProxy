@@ -460,8 +460,8 @@ void* start_worker(void* argv) {
             finalize_with_ring(err, listen_socket_fd, ring, conns);
         }
 
-        struct io_uring_cqe* cqes[MAX_PROCCESSING_EV];
-        int cqe_count = io_uring_peek_batch_cqe(&ring, cqes, MAX_PROCCESSING_EV);
+        struct io_uring_cqe* cqes[MAX_CONNECTIONS];
+        int cqe_count = io_uring_peek_batch_cqe(&ring, cqes, MAX_CONNECTIONS);
         if (cqe_count < 0) {
             fprintf(stderr, "io_uring_peek_batch_cqe failed: %s\n", strerror(err));
             finalize_with_ring(err, listen_socket_fd, ring, conns);
