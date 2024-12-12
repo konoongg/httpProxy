@@ -544,8 +544,11 @@ void* start_worker(void* argv) {
                                 if (err == -1) {
                                     err = add_socket_write_client(&ring, conn->client->fd, conn);
                                     check_err(err, "max connection, try write server answer again\n", listen_socket_fd, ring, conns);
-                                    
-                                } else {                              
+                                } else {          
+                                    err = close(conn->server->fd);
+                                    if (err == -1) { 
+                                    fprintf(stderr, "close: %s\n", strerror(errno)); 
+                                    }                     
                                     create_server_connect(conn, listen_socket_fd, ring);
                                 }
                             } else {
@@ -583,6 +586,10 @@ void* start_worker(void* argv) {
                                 err = add_socket_write_client(&ring, conn->client->fd, conn);
                                 check_err(err, "max connection, try write server answer again\n", listen_socket_fd, ring, conns);
                             } else {
+                                err = close(conn->server->fd);
+                                if (err == -1) { 
+                                    fprintf(stderr, "close: %s\n", strerror(errno)); 
+                                } 
                                 create_server_connect(conn, listen_socket_fd, ring);
                             } 
                         } else {

@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 
 #define MAX_MESSAGE_LEN 100 * 1024
+#define MAX_HTTP_SIZE 100 * 1024
 #define git 100 * 1024
 
 typedef  enum {
