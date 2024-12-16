@@ -101,7 +101,7 @@ void print_help() {
     printf("--port | -p - The port on which the proxy listens. Default is 8080 \n");
     printf("--max-client-threads | -t  - The maximum number of working threads (size of the client connection pool). Default is 4.\n");
     printf("--help | -h - Displays a message on how to run the proxy, possible flags, and their descriptions \n");
-    printf("--cache-initial-size | -i  - Initial cache size. Default is 1MB. format [value][kb| mb | b]\n");
+    printf("--cache-initial-size | -i  - Initial cache size. Default is 1MB. format [value][b | kb | mb | gb]\n");
     printf("--cache-max-size | -m - Maximum cache size. Default is 10MB. format [value][kb| mb | b]\n");
     printf("--cache-ttl | -l - Cache entry time to live in seconds. Default is 5 seconds\n");
     printf("\n\n");
@@ -129,12 +129,14 @@ int pars_int(char* str, int min_val, int max_val, char** endptr) {
 
 //defines memory measurement units
 int define_size_scale(char* str) {
-	if (strcmp(str, "b") == 0) {
+	if (strncmp(str, "b", 2) == 0) {
         return 1;
-	} else if (strcmp(str, "kb") == 0) {
+	} else if (strncmp(str, "kb", 3) == 0) {
         return 1024;
-	} else if (strcmp(str, "mb") == 0) {
+	} else if (strncmp(str, "mb", 3) == 0) {
         return 1024 * 1024;
+	}else if (strncmp(str, "gb", 3) == 0) {
+        return 1024 * 1024 * 1024; 
 	} else {
         fprintf(stderr, "Unknown size scale: %s\n", str);
         exit(EXIT_FAILURE);
@@ -152,27 +154,27 @@ int proccess_flags(int argc, char** argv, settings* set) {
         if(strncmp(argv[i], "--help", 6) == 0 || strncmp(argv[i], "-h", 2) == 0) {
             print_help();
             return 1;
-        } else if (strncmp(argv[i], "--port", 6) == 0 || strncmp(argv[i], "-p", 2) == 0) {
+        } else if (strncmp(argv[i], "--port", 7) == 0 || strncmp(argv[i], "-p", 3) == 0) {
             check_count_arg(i, argc, "Port must be given an integer\n");
             ++i;
-            set->port = pars_int(argv[i+1], MIN_PORT_NUM, MAX_PORT_NUM, NULL);
-        } else if (strncmp(argv[i], "--max-client-threads", 20) == 0 || strncmp(argv[i], "-t", 2) == 0) {
+            set->port = pars_int(argv[i], MIN_PORT_NUM, MAX_PORT_NUM, NULL);
+        } else if (strncmp(argv[i], "--max-client-threads", 21) == 0 || strncmp(argv[i], "-t", 3) == 0) {
             check_count_arg(i, argc, "max client threads must be given an integer\n");
             ++i;
             set->max_count_threads = pars_int(argv[i], MIN_COUNT_WORKER, MAX_COUNT_WORKER, NULL);
-        } else if (strncmp(argv[i], "--cache-initial-size", 20) == 0 || strncmp(argv[i], "-i", 2) == 0) {
+        } else if (strncmp(argv[i], "--cache-initial-size", 21) == 0 || strncmp(argv[i], "-i", 3) == 0) {
             check_count_arg(i, argc, "cache initial size must be given an integer\n");
             ++i;
             char* endptr;
 			set->init_cache_size = pars_int(argv[i], MIN_CACHE_INIT_SIZE, MAX_CACHE_INIT_SIZE, &endptr);
            	set->init_cache_size *= define_size_scale(endptr);
-        } else if (strncmp(argv[i], "--cache-max-size", 16) == 0 || strncmp(argv[i], "-m", 2) == 0) {
+        } else if (strncmp(argv[i], "--cache-max-size", 17) == 0 || strncmp(argv[i], "-m", 3) == 0) {
             check_count_arg(i, argc, "cache max size must be given an integer\n");
             ++i;
             char* endptr;
 			set->max_cache_size = pars_int(argv[i], MIN_CACHE_MAX_SIZE, MAX_CACHE_MAX_SIZE, &endptr);
            	set->max_cache_size *= define_size_scale(endptr);
-        } else if (strncmp(argv[i], "--cache-ttl", 11) == 0 || strncmp(argv[i], "-l", 2) == 0) {
+        } else if (strncmp(argv[i], "--cache-ttl", 12) == 0 || strncmp(argv[i], "-l", 3) == 0) {
             check_count_arg(i, argc, "cache ttl must be given an integer\n");
             ++i;
 			set->cache_ttl = pars_int(argv[i], MIN_CACHE_TTL, MAX_CACHE_TTL, NULL);
