@@ -36,8 +36,8 @@
 typedef struct settings {
   uint32 port;
   uint32 max_count_threads;
-  uint32 init_cache_size;
-  uint32 max_cache_size;
+  size_t init_cache_size;
+  size_t max_cache_size;
   uint32 cache_ttl;
 } settings;
 
@@ -109,7 +109,7 @@ void print_help() {
 
 //reads a number and returns it if it was successfully read and lies within the specified range;
 // the pointer to the remainder of the string is returned in endptr
-int pars_int(char* str, int min_val, int max_val, char** endptr) {
+int pars_int(char* str, size_t min_val, size_t max_val, char** endptr) {
     errno = 0;
     int val =  (int)strtol(str, endptr, 10);
     if (endptr != NULL && *endptr == str) {
@@ -121,7 +121,7 @@ int pars_int(char* str, int min_val, int max_val, char** endptr) {
         exit(EXIT_FAILURE);
     }
     if (val > max_val || val < min_val) {
-        fprintf(stderr, "val is %d, but min_val: %d, max_val: %d\n", val, min_val, max_val);
+        fprintf(stderr, "val is %d, but min_val: %ld, max_val: %ld\n", val, min_val, max_val);
         exit(EXIT_FAILURE);
     }
     return val;
@@ -203,6 +203,7 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
     
+    err = init_cache(set->init_cache_size, set->cache_ttl);
     
     tids = (pthread_t*)malloc(set->max_count_threads * sizeof(pthread_t));
     if (tids == NULL) {
@@ -216,6 +217,7 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
     
+    finish_cache();
     free(set);
     free(tids);
     printf("finish\n");

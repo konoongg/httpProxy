@@ -11,6 +11,7 @@
 #include <pthread.h>
 #include <netinet/in.h>
 
+#include "cache.h"
 #include "data_parser.h"
 #include "proccess_http.h"
 #include "structs.h"
@@ -501,6 +502,10 @@ void* start_worker(void* argv) {
                     client->read_buffer_size += res;
                     pars_status status = pars_head(conn->client, CLIENT);
                     if (status == ALL_PARS) {
+                        char* url = get_url(conn->client->http->domain, conn->client->http->host);
+
+                        int err = get_cache(url, conn->server->http_mes_buffer, );
+                        free(url);
                         create_server_connect(conn, listen_socket_fd, ring, end);
                     } else if (status == ERR) {
                     	free_conn_info(conn);

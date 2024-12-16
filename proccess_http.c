@@ -112,3 +112,11 @@ int prepare_redirect(conn_info* conn) {
     return 0;
 }
 
+char* get_url(char* domain, char* host) {
+    int size = strlen(domain) + strlen(host) + 1;
+    char* url = (char*)malloc(size);
+    memcpy(url, domain, strlen(domain));
+    memcpy(url + strlen(domain), host, strlen(host));
+    url[size - 1] = '\0';
+    return url;
+}

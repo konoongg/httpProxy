@@ -4,3 +4,4 @@ curl -o results/result-0 --http1.0 --progress-bar  --proxy1.0 localhost:8080  ht
 curl -o results/result-1 --http1.0 --progress-bar  --proxy1.0 localhost:8080  http://xcal1.vodafone.co.uk/
 curl -o results/result-2 --http1.0 --progress-bar  --proxy1.0 localhost:8080  http://gramota.ru/
 curl -o results/result-3 --http0.9 --http1.0 --progress-bar  --proxy1.0 localhost:8080 http://xcal1.vodafone.co.uk/5MB.zip
+curl -o results/result-3 --http0.9 --http1.0 --progress-bar  --proxy1.0 localhost:8080 http://xcal1.vodafone.co.uk/5MB.zip
