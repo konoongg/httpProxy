@@ -65,6 +65,7 @@ typedef struct connection {
 
     typedef struct conn_info {
         type_ev type;
+        type_ev prev_type;
         struct sockaddr_in* sockaddr;
         connection* client;
         connection* server;
@@ -73,7 +74,8 @@ typedef struct connection {
 typedef enum {
     ALL_PARS,
     PART_PARS,
-    ERR
+    ERR,
+    FULL_BUFFER,
 } pars_status;
 
 #endif

@@ -12,10 +12,12 @@
 //save_http_res with error check
 #define do_save_http_res(size_copy_data, conn) \
     int err = save_http_res(conn->read_buffer, conn->http_mes_buffer, size_copy_data, &conn->size_http_res);\
-    conn->read_buffer_size -= size_copy_data;\
     if (err == -1) { \
-        return ERR;\
-    }
+        return ERR; \
+    } else if (err == 1) { \
+        return  FULL_BUFFER; \
+    } \
+    conn->read_buffer_size -= size_copy_data;
 
 //check if buffer included a http head 
 int check_http_mes(char* data, int size) {
@@ -30,11 +32,12 @@ int check_http_mes(char* data, int size) {
     return -1;
 }
 
+__thread int cantsave = 0;
 
 int save_http_res(char* read_buffer, char* http_mes_buffer, int copy_size, int* size_http_mes) {
     if (*size_http_mes + copy_size > MAX_HTTP_SIZE) {
-        fprintf(stderr, "so big http");
-		return -1;
+        cantsave += copy_size;
+		return 1;
     }
     memcpy(http_mes_buffer + *size_http_mes, read_buffer, copy_size);
    

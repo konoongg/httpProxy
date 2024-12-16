@@ -10,6 +10,7 @@ $(TARGET) : $(SRCS)
 
 clean:
 	rm -f $(TARGET)
+	rm -rf t/results
 
 rebuild: clean all
 
