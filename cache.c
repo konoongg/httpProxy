@@ -9,13 +9,13 @@
 
 cache_bascket** cache = NULL;
 int cache_ttl_s;
- 
+
 #define save_rwlock_unlock(lock) \
     err = pthread_rwlock_unlock(lock); \
     if (err != 0) { \
         printf(" pthread_rwlock_unlock() failed %s\n", strerror(err)); \
         return -1;\
-    } 
+    }
 
 #define save_rwlock_rdlock(lock) \
     err = pthread_rwlock_rdlock(lock); \
@@ -140,7 +140,7 @@ int add_cache_req(char* key, int content_size) {
         save_rwlock_unlock(&hash_basket->lock);
         return -1;
     }
-    
+
     save_rwlock_unlock(&hash_basket->lock);
     return 0;
 }
@@ -182,7 +182,7 @@ int get_cache(char* key, char** content, int content_offset) {
         }
         cur_req = cur_req->next;
     }
-    
+
     save_rwlock_unlock(&hash_basket->lock);
     *content = NULL;
     return 0;

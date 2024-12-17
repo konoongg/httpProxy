@@ -11,6 +11,7 @@ $(TARGET) : $(SRCS)
 clean:
 	rm -f $(TARGET)
 	rm -rf t/results
+	rm -rf t/os-proxy-tests/results
 
 rebuild: clean all
 

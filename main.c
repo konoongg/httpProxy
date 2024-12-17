@@ -136,7 +136,7 @@ int define_size_scale(char* str) {
 	} else if (strncmp(str, "mb", 3) == 0) {
         return 1024 * 1024;
 	}else if (strncmp(str, "gb", 3) == 0) {
-        return 1024 * 1024 * 1024; 
+        return 1024 * 1024 * 1024;
 	} else {
         fprintf(stderr, "Unknown size scale: %s\n", str);
         exit(EXIT_FAILURE);
@@ -202,9 +202,9 @@ int main(int argc, char** argv) {
         free(set);
         exit(EXIT_FAILURE);
     }
-    
+
     err = init_cache(set->init_cache_size, set->cache_ttl);
-    
+
     tids = (pthread_t*)malloc(set->max_count_threads * sizeof(pthread_t));
     if (tids == NULL) {
         fprintf(stderr, "can't alloc memmro: %s\n", strerror(errno));
@@ -216,7 +216,7 @@ int main(int argc, char** argv) {
         free(set);
         exit(EXIT_FAILURE);
     }
-    
+
     finish_cache();
     free(set);
     free(tids);

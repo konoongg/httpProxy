@@ -9,6 +9,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <pthread.h>
+#include <threads.h>
 #include <netinet/in.h>
 
 #include "cache.h"
@@ -17,8 +18,8 @@
 #include "structs.h"
 #include "worker.h"
 
-__thread int shutdown_with_wait;
-__thread  conn_info* conns = NULL;
+thread_local int shutdown_with_wait;
+thread_local  conn_info* conns = NULL;
 
 #define check_err(err, message, s_fd, ring, coons, end) \
     if (err == -1) { \
@@ -93,11 +94,11 @@ __thread  conn_info* conns = NULL;
     connection->http->method = NULL; \
     connection->http->host = NULL; \
     connection->http->headers = NULL;\
-    connection->http->status_mes = NULL; 
+    connection->http->status_mes = NULL;
 
 #define save_free(memmory) \
     free(memmory); \
-    memmory = NULL; 
+    memmory = NULL;
 
 
 
@@ -147,20 +148,20 @@ int free_conn_info(conn_info* conn) {
 
 void cleanup_handler(void *arg) {
     worker_end* end = (worker_end*)arg;
-    
+
     if (end->mode == FIN_WITH_RING) {
-        for (int i = 0; i < MAX_CONNECTIONS; ++i ) { 
-            free_conn_info(&((end->conns)[i])); 
+        for (int i = 0; i < MAX_CONNECTIONS; ++i ) {
+            free_conn_info(&((end->conns)[i]));
         }
-        free(end->conns); 
+        free(end->conns);
 		io_uring_queue_exit(end->ring);
     } else if (end->mode == FIN) {
         int err = close(end->s_fd); \
-        if (err == -1) { 
-            fprintf(stderr, "cleanup_handler: close error %s\n", strerror(errno)); 
-        } 
-    } 
-   
+        if (err == -1) {
+            fprintf(stderr, "cleanup_handler: close error %s\n", strerror(errno));
+        }
+    }
+
     free(end);
     printf("cleanup_handler %d \n" , gettid());
 }
@@ -169,28 +170,28 @@ int conn_init(conn_info* conn_i) {
     if (conn_i->client == NULL) {
         conn_i->client = (connection*)malloc(sizeof(connection));
         if (conn_i->client == NULL) {
-            fprintf(stderr, "close: %s\n", strerror(errno)); 
-            return -1; 
+            fprintf(stderr, "close: %s\n", strerror(errno));
+            return -1;
         }
         init_connection(conn_i->client);
     }
     if (conn_i->server == NULL) {
         conn_i->server = (connection*)malloc(sizeof(connection));
         if (conn_i->server == NULL) {
-            fprintf(stderr, "close: %s\n", strerror(errno)); 
-            return -1; 
+            fprintf(stderr, "close: %s\n", strerror(errno));
+            return -1;
         }
-        init_connection(conn_i->server);  
+        init_connection(conn_i->server);
     }
     if (conn_i->sockaddr == NULL) {
         conn_i->sockaddr = (struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
         if (conn_i->sockaddr == NULL) {
-            fprintf(stderr, "can't malloc: %s\n", strerror(errno)); 
-            return -1; 
+            fprintf(stderr, "can't malloc: %s\n", strerror(errno));
+            return -1;
         }
         memset(conn_i->sockaddr , 0 , sizeof(struct sockaddr_in));
     }
-    return 0;    
+    return 0;
 }
 
 int get_conn_i(conn_info* conn_i, int fd) {
@@ -207,7 +208,7 @@ int get_conn_i(conn_info* conn_i, int fd) {
     for (int i = 0; i < MAX_CONNECTIONS; i++) {
         if (conn_i[i].client->fd == -1) {
         	return i;
-        } 
+        }
     }
     return -1;
 }
@@ -220,7 +221,7 @@ int add_accept(struct io_uring *ring, int fd, struct sockaddr *client_addr, sock
     get_conn_i_id(conn_i, conn_i_id, fd);
     conn_info* conn = &conn_i[conn_i_id];
     io_uring_prep_accept(sqe, fd, client_addr, client_len, 0);
-    conn->client->fd = fd; 
+    conn->client->fd = fd;
     conn->type = ACCEPT;
     io_uring_sqe_set_data(sqe, conn);
     return 0;
@@ -231,7 +232,7 @@ int add_socket_read_client(struct io_uring *ring, int fd, conn_info* conn) {
     get_sqe(ring, sqe);
 
     connection* client = conn->client;
-    io_uring_prep_recv(sqe, fd, (void*)(client->read_buffer + client->read_buffer_size), MAX_MESSAGE_LEN - client->read_buffer_size, 0); 
+    io_uring_prep_recv(sqe, fd, (void*)(client->read_buffer + client->read_buffer_size), MAX_MESSAGE_LEN - client->read_buffer_size, 0);
     conn->type = READ;
     io_uring_sqe_set_data(sqe, conn);
     return 0;
@@ -307,12 +308,12 @@ int init_signals() {
         fprintf(stderr, "init_signals: sigemptyset error: %s\n", strerror(errno));
         return -1;
     }
-    err = sigaddset(&mask, SIGUSR1 ); 
+    err = sigaddset(&mask, SIGUSR1 );
     if (err == -1) {
         fprintf(stderr, "init_signals: sigaddset error: %s\n", strerror(errno));
         return -1;
     }
-    err = sigaddset(&mask, SIGUSR2 ); 
+    err = sigaddset(&mask, SIGUSR2 );
     if (err == -1) {
         fprintf(stderr, "init_signals: sigaddset error: %s\n", strerror(errno));
         return -1;
@@ -352,7 +353,7 @@ void* start_worker(void* argv) {
         return NULL;
     }
 
-    
+
     worker_info* worker = (worker_info*)argv;
 
     worker_end* end = (worker_end*)malloc(sizeof(worker_end));
@@ -421,7 +422,7 @@ void* start_worker(void* argv) {
             printf("f 3\n");
         finalize_with_ring(err, listen_socket_fd, ring, conns, end);
     }
-    
+
     for (int i = 0; i < MAX_CONNECTIONS; ++i) {
         int err = conn_init(&(conns[i]));
         if (err == -1) {
@@ -430,7 +431,6 @@ void* start_worker(void* argv) {
         }
     }
 
-    
     struct sockaddr_in client_addr;
     socklen_t client_len = sizeof(sockaddr);
     err = add_accept(&ring, listen_socket_fd, (struct sockaddr *) &client_addr, &client_len, conns);
@@ -504,7 +504,7 @@ void* start_worker(void* argv) {
                     if (status == ALL_PARS) {
                         char* url = get_url(conn->client->http->domain, conn->client->http->host);
 
-                        int err = get_cache(url, conn->server->http_mes_buffer, );
+                        //int err = get_cache(url, conn->server->http_mes_buffer, );
                         free(url);
                         create_server_connect(conn, listen_socket_fd, ring, end);
                     } else if (status == ERR) {
@@ -531,7 +531,7 @@ void* start_worker(void* argv) {
                         memcpy(conn->client->http_mes_buffer, http_res_coppy, need_write);
                         err = add_socket_write_server(&ring, conn->server->fd, conn); \
                         check_err(err, "max connection, try add accept again\n", listen_socket_fd, ring, conns, end);
-                    }                   
+                    }
                 }
             } else if (type == READ_SERV_HEAD) {
               	printf("READ_SERV_HEAD tid: %d\n", gettid());
@@ -553,11 +553,11 @@ void* start_worker(void* argv) {
                                 if (err == -1) {
                                     err = add_socket_write_client(&ring, conn->client->fd, conn);
                                     check_err(err, "max connection, try write cleint answer again\n", listen_socket_fd, ring, conns, end);
-                                } else {          
+                                } else {
                                     err = close(conn->server->fd);
-                                    if (err == -1) { 
-                                    fprintf(stderr, "close: %s\n", strerror(errno)); 
-                                    }                     
+                                    if (err == -1) {
+                                    fprintf(stderr, "close: %s\n", strerror(errno));
+                                    }
                                     create_server_connect(conn, listen_socket_fd, ring, end);
                                 }
                             } else {
@@ -573,7 +573,7 @@ void* start_worker(void* argv) {
                             conn->prev_type = READ_SERV_BODY;
                             err = add_socket_write_client(&ring, conn->client->fd, conn);
                             check_err(err, "max connection, try write cleint answer again\n", listen_socket_fd, ring, conns, end);
-                        } 
+                        }
                     } else if (status == ERR) {
                     	free_conn_info(conn);
                     } else if (status == PART_PARS) {
@@ -587,7 +587,7 @@ void* start_worker(void* argv) {
                     fprintf(stderr, "READ failed, disconnect %s\n", strerror(-res));
                     finalize_with_ring(err, listen_socket_fd, ring, conns, end);
                 } else if (res == 0) {
-                    fprintf(stderr, "READ_SERV_BODY finish, disconnect %d %d\n", conn->server->size_http_res, conn->server->read_buffer_size);
+                    fprintf(stdout, "READ_SERV_BODY finish, disconnect %d %d\n", conn->server->size_http_res, conn->server->read_buffer_size);
                     free_conn_info(conn);
                 } else {
                     connection* server = conn->server;
@@ -601,11 +601,11 @@ void* start_worker(void* argv) {
                                 check_err(err, "max connection, try write cleint answer again\n", listen_socket_fd, ring, conns, end);
                             } else {
                                 err = close(conn->server->fd);
-                                if (err == -1) { 
-                                    fprintf(stderr, "close: %s\n", strerror(errno)); 
-                                } 
+                                if (err == -1) {
+                                    fprintf(stderr, "close: %s\n", strerror(errno));
+                                }
                                 create_server_connect(conn, listen_socket_fd, ring, end);
-                            } 
+                            }
                         } else {
                             err = add_socket_write_client(&ring, conn->client->fd, conn);
                             check_err(err, "max connection, try write cleint answer again\n", listen_socket_fd, ring, conns, end);
@@ -625,45 +625,52 @@ void* start_worker(void* argv) {
               	printf("write tid: %d %d\n", gettid(), res);
                 if (res < 0) {
                     fprintf(stderr, "WRITE failed %s\n", strerror(-res));
-                    finalize_with_ring(err, listen_socket_fd, ring, conns, end);
-                }
-                int need_write = conn->server->size_http_res - res;
-                assert(need_write >= 0);
-                connection* server = conn->server;
-                if (need_write == 0 && server->need_body_size == 0) {
                     free_conn_info(conn);
-                    printf("FINISH CONNECT WRITE DATA  %d\n", res);
-                    if (shutdown_with_wait) {
-                        check_finish_proxing();
-                    }
-                } else if (need_write == 0) {
-                    server->size_http_res = need_write;
-                    if (conn->prev_type == READ_SERV_BODY) {
-                        conn->prev_type = WRITE;
-                        memcpy(server->http_mes_buffer, server->read_buffer, server->read_buffer_size);
-                        server->size_http_res = server->read_buffer_size;
-                        server->need_body_size -= server->read_buffer_size;
-                        server->read_buffer_size = 0;
-                        err = add_socket_read_server(&ring, server->fd, conn, READ_SERV_BODY);
-                        check_err(err, "max connection, try read server body again\n", listen_socket_fd, ring, conns, end);
-                    } else {
-                        fprintf(stderr, "header so big\n");
+                } else {
+                    int need_write = conn->server->size_http_res - res;
+                    assert(need_write >= 0);
+                    connection* server = conn->server;
+                    printf("need_write %d server->need_body_size %d \n",need_write,  server->need_body_size);
+                    if (need_write == 0 && server->need_body_size == 0) {
                         free_conn_info(conn);
+                        printf("FINISH CONNECT WRITE DATA  %d\n", res);
+                        if (shutdown_with_wait) {
+                            check_finish_proxing();
+                        }
+                    } else if (need_write == 0) {
+                        server->size_http_res = need_write;
+                        if (conn->prev_type == READ_SERV_BODY) {
+                            conn->prev_type = WRITE;
+                            memcpy(server->http_mes_buffer, server->read_buffer, server->read_buffer_size);
+                            server->size_http_res = server->read_buffer_size;
+                            server->need_body_size -= server->read_buffer_size;
+                            server->read_buffer_size = 0;
+                            if (server->need_body_size == 0) {
+                                err = add_socket_write_client(&ring, conn->client->fd, conn);
+                                check_err(err, "max connection, try write cleint answer again\n", listen_socket_fd, ring, conns, end);
+                            } else {
+                                err = add_socket_read_server(&ring, server->fd, conn, READ_SERV_BODY);
+                                check_err(err, "max connection, try read server body again\n", listen_socket_fd, ring, conns, end);
+                            }
+                        } else {
+                            fprintf(stderr, "header so big\n");
+                            free_conn_info(conn);
+                        }
                     }
-                } 
-                else {
-                    char* http_res_coppy = (char*)malloc(need_write * sizeof(char));
-                    if (http_res_coppy == NULL) {
-                        fprintf(stderr, "can't alloc memmro: %s\n", strerror(errno));
-                        finalize_with_ring(err, listen_socket_fd, ring, conns, end);
+                    else {
+                        char* http_res_coppy = (char*)malloc(need_write * sizeof(char));
+                        if (http_res_coppy == NULL) {
+                            fprintf(stderr, "can't alloc memmro: %s\n", strerror(errno));
+                            finalize_with_ring(err, listen_socket_fd, ring, conns, end);
+                        }
+                        memcpy(http_res_coppy, conn->server->http_mes_buffer + res, need_write);
+                        memcpy(conn->server->http_mes_buffer, http_res_coppy, need_write);
+                        conn->server->size_http_res = need_write;
+                        err = add_socket_write_client(&ring, conn->client->fd, conn);
+                        check_err(err, "max connection, try write client answer again\n", listen_socket_fd, ring, conns, end);
                     }
-                    memcpy(http_res_coppy, conn->server->http_mes_buffer + res, need_write);
-                    memcpy(conn->server->http_mes_buffer, http_res_coppy, need_write);
-                    conn->server->size_http_res = need_write;
-                    err = add_socket_write_client(&ring, conn->client->fd, conn);
-                    check_err(err, "max connection, try write client answer again\n", listen_socket_fd, ring, conns, end);
                 }
-            } 
+            }
         	io_uring_cqe_seen(&ring, cqe);
         }
     }

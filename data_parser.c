@@ -1,4 +1,3 @@
-
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
@@ -19,14 +18,14 @@
     } \
     conn->read_buffer_size -= size_copy_data;
 
-//check if buffer included a http head 
+//check if buffer included a http head
 int check_http_mes(char* data, int size) {
     if (size < 4) {
       return -1;
     }
     for (int i = 0; i < size - 3; ++i) {
         if (data[i] == '\r' && data[i + 1] == '\n' && data[i + 2] == '\r' && data[i + 3] == '\n') {
-            return i + 3 + 1; // return size http head 
+            return i + 3 + 1; // return size http head
         }
     }
     return -1;
@@ -36,11 +35,12 @@ __thread int cantsave = 0;
 
 int save_http_res(char* read_buffer, char* http_mes_buffer, int copy_size, int* size_http_mes) {
     if (*size_http_mes + copy_size > MAX_HTTP_SIZE) {
+        printf("try save %d \n", copy_size);
         cantsave += copy_size;
 		return 1;
     }
     memcpy(http_mes_buffer + *size_http_mes, read_buffer, copy_size);
-   
+
     char* read_buffer_coppy = (char*)malloc( MAX_MESSAGE_LEN * sizeof(char));;
     if (read_buffer_coppy == NULL) {
         fprintf(stderr, "can't malloc %s", strerror(errno));
@@ -114,7 +114,7 @@ int pars_serv_head(connection* conn, char* line) {
             if (conn->http->version  == NULL) {
                 fprintf(stderr, "can't malloc %s", strerror(errno));
                 return -1;
-            }   
+            }
             memcpy(conn->http->version, word, size_word);
         } else if (count_word == 1) {
             errno = 0;
@@ -144,7 +144,7 @@ int pars_serv_head(connection* conn, char* line) {
         return -1;
     }
     memcpy(conn->http->status_mes, line + count_sym , line_size + 1);
-    return 0; 
+    return 0;
 }
 
 int pars_http_header(connection* conn, connect_with src) {
@@ -153,7 +153,7 @@ int pars_http_header(connection* conn, connect_with src) {
         fprintf(stderr, "can't calloc  %s\n", strerror(errno));
         return -1;
     }
-    
+
     memcpy(http_mes_buffer_coppy, conn->http_mes_buffer, conn->size_http_res);
     conn->http_mes_buffer[conn->size_http_res] = '\0';
     char** lines = (char**)calloc(MAX_COUNT_HEADERS, sizeof(char*));
@@ -229,9 +229,9 @@ int pars_http_header(connection* conn, connect_with src) {
                 free(lines);
                 free(http_mes_buffer_coppy);
                 return -1;
-            }         
-            conn->http->headers->last = conn->http->headers->first; 
-        } else { 
+            }
+            conn->http->headers->last = conn->http->headers->first;
+        } else {
             conn->http->headers->last->next = (http_header*)malloc(sizeof(http_header));
             if (conn->http->headers->last->next == NULL) {
                 fprintf(stderr, "can't malloc %s\n", strerror(errno));
@@ -257,10 +257,9 @@ int pars_http_header(connection* conn, connect_with src) {
             free(http_mes_buffer_coppy);
             return -1;
         }
-        
+
         memcpy(conn->http->headers->last->key, word, key_size + 1);
-            
-             
+
         int val_size =  line_size - key_size;
 
         conn->http->headers->last->value = (char*)malloc(val_size + 1);
@@ -273,12 +272,12 @@ int pars_http_header(connection* conn, connect_with src) {
             free(http_mes_buffer_coppy);
             return -1;
         }
-        memcpy(conn->http->headers->last->value, lines[i] + key_size + 1, val_size + 1);            
+        memcpy(conn->http->headers->last->value, lines[i] + key_size + 1, val_size + 1);
         char content_length[15] = "Content-Length";
         char host[5] = "Host";
         if (strncmp(conn->http->headers->last->key, content_length, 15) == 0) {
             char* endptr;
-            conn->need_body_size =  (int)strtol(word + key_size + 1, &endptr, 10);         
+            conn->need_body_size =  (int)strtol(word + key_size + 1, &endptr, 10);
             if (endptr == word) {
                 fprintf(stderr, "http head parsing: No digits were found\n");
                 for (int i = 0; i < num_line; ++i) {
@@ -292,10 +291,10 @@ int pars_http_header(connection* conn, connect_with src) {
                 fprintf(stderr, "http head parsing: %s\n", strerror(errno));
                 for (int i = 0; i < num_line; ++i) {
                     free(lines[i]);
-                } 
+                }
                 free(lines);
-                free(http_mes_buffer_coppy);                           
-                return -1;                    
+                free(http_mes_buffer_coppy);
+                return -1;
             }
         } else if (strncmp(conn->http->headers->last->key, host, 5) == 0) {
             free(conn->http->host);
@@ -306,12 +305,12 @@ int pars_http_header(connection* conn, connect_with src) {
                     free(lines[i]);
                 }
                 free(lines);
-                free(http_mes_buffer_coppy);                           
-                return -1; 
+                free(http_mes_buffer_coppy);
+                return -1;
             }
             memcpy(conn->http->host, conn->http->headers->last->value + 1, val_size);
         }
-        count_word++; 
+        count_word++;
         free(lines[i]);
         lines[i] = NULL;
     }
@@ -338,6 +337,7 @@ pars_status pars_head(connection* conn, connect_with src) {
 pars_status pars_body(connection* conn) {
     int data_size = conn->read_buffer_size;
     do_save_http_res(conn->read_buffer_size, conn);
+    printf("conn->need_body_size %d data_size %d \n", conn->need_body_size,  data_size);
     conn->need_body_size -= data_size;
     if (conn->need_body_size == 0) {
         return ALL_PARS;

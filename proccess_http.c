@@ -50,7 +50,7 @@ int resolve_domain(const char* hostname, struct sockaddr_in* sockaddr) {
 
     } else {
         fprintf(stderr, "getaddrinfo: can't resolve %s", hostname);
-        return -1;   
+        return -1;
     }
     freeaddrinfo(res);
     return 0;
@@ -86,17 +86,17 @@ int create_host_from_domain(char** host, char* domain) {
 
 int prepare_redirect(conn_info* conn) {
     char* location_head = NULL;
-    http_header* cur_header = conn->server->http->headers->first; 
+    http_header* cur_header = conn->server->http->headers->first;
     char* location = "Location";
 
-    while (cur_header != NULL) { 
-        http_header* next_header = (http_header*)cur_header->next; 
+    while (cur_header != NULL) {
+        http_header* next_header = (http_header*)cur_header->next;
         cur_header = next_header;
         if (strncmp(cur_header->key, location, strlen(location) + 1)  == 0) {
             location_head = cur_header->value;
             break;
         }
-    } 
+    }
     if (location_head == NULL) {
         fprintf(stderr, "can't redirect, can't find location \n");
         return -1;

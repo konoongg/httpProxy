@@ -13,7 +13,7 @@ char* alloc_mem(uint32_t size) {
         if (size_seg == 0) {
             *(memmory + i) = size;
             return memmory + i + 4;
-        }   
+        }
         i += 4 + size_seg;
     }
     return NULL;
