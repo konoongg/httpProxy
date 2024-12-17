@@ -478,7 +478,7 @@ void* start_worker(void* argv) {
                     free_conn_info(conn);
                     continue;
                 }
-              	printf("ACCEPT tid:%d\n", gettid());
+              	//printf("ACCEPT tid:%d\n", gettid());
                 if (res < 0) {
                     free_conn_info(conn);
                     fprintf(stderr, "ACCEPT failed %s \n", strerror(-res));
@@ -490,7 +490,7 @@ void* start_worker(void* argv) {
                 err = add_accept(&ring, listen_socket_fd, (struct sockaddr *) &client_addr, &client_len, conns);
                 check_err(err, "max connection, try add accept again\n", listen_socket_fd, ring, conns, end);
             } else if (type == READ) {
-              	printf("READ tid: %d\n", gettid());
+              	//printf("READ tid: %d\n", gettid());
                 if (res < 0) {
                     fprintf(stderr, "READ failed, disconnect %s\n", strerror(-res));
                     free_conn_info(conn);
@@ -534,7 +534,7 @@ void* start_worker(void* argv) {
                     }
                 }
             } else if (type == READ_SERV_HEAD) {
-              	printf("READ_SERV_HEAD tid: %d\n", gettid());
+              	//printf("READ_SERV_HEAD tid: %d\n", gettid());
                 if (res < 0) {
                     fprintf(stderr, "READ failed, disconnect %s\n", strerror(-res));
                     finalize_with_ring(err, listen_socket_fd, ring, conns, end);
@@ -582,12 +582,12 @@ void* start_worker(void* argv) {
                     }
                 }
             } else if (type == READ_SERV_BODY) {
-              	printf("READ_SERV_BODY tid: %d %d\n", gettid(), res);
+              	//printf("READ_SERV_BODY tid: %d %d\n", gettid(), res);
                 if (res < 0) {
                     fprintf(stderr, "READ failed, disconnect %s\n", strerror(-res));
                     finalize_with_ring(err, listen_socket_fd, ring, conns, end);
                 } else if (res == 0) {
-                    fprintf(stdout, "READ_SERV_BODY finish, disconnect %d %d\n", conn->server->size_http_res, conn->server->read_buffer_size);
+                    fprintf(stderr, "READ_SERV_BODY finish, disconnect %d %d\n", conn->server->size_http_res, conn->server->read_buffer_size);
                     free_conn_info(conn);
                 } else {
                     connection* server = conn->server;
@@ -622,7 +622,7 @@ void* start_worker(void* argv) {
                     }
                 }
             } else if (type == WRITE) {
-              	printf("write tid: %d %d\n", gettid(), res);
+              	//printf("write tid: %d %d\n", gettid(), res);
                 if (res < 0) {
                     fprintf(stderr, "WRITE failed %s\n", strerror(-res));
                     free_conn_info(conn);
@@ -630,7 +630,7 @@ void* start_worker(void* argv) {
                     int need_write = conn->server->size_http_res - res;
                     assert(need_write >= 0);
                     connection* server = conn->server;
-                    printf("need_write %d server->need_body_size %d \n",need_write,  server->need_body_size);
+                    //printf("need_write %d server->need_body_size %d \n",need_write,  server->need_body_size);
                     if (need_write == 0 && server->need_body_size == 0) {
                         free_conn_info(conn);
                         printf("FINISH CONNECT WRITE DATA  %d\n", res);

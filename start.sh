@@ -2,5 +2,5 @@ ulimit -c unlimited
 clear 
 make clean
 make
-./httpProxy --help
-./httpProxy -t 4 --port 8080 
+./httpProxy_with_san --help
+./httpProxy_with_san -t 4 --port 8080 

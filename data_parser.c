@@ -31,12 +31,21 @@ int check_http_mes(char* data, int size) {
     return -1;
 }
 
-__thread int cantsave = 0;
+
+int delimeter(int start_pos, char* data,  char* delimetr) {
+    int index = start_pos;
+    while (index + strlen(delimetr) < strlen(data)) {
+        if (strncmp(data + index, delimetr, strlen(delimetr))) {
+            return index;
+        }
+        index++;
+    }
+    return -1;
+}
 
 int save_http_res(char* read_buffer, char* http_mes_buffer, int copy_size, int* size_http_mes) {
     if (*size_http_mes + copy_size > MAX_HTTP_SIZE) {
-        printf("try save %d \n", copy_size);
-        cantsave += copy_size;
+        //printf("try save %d \n", copy_size);
 		return 1;
     }
     memcpy(http_mes_buffer + *size_http_mes, read_buffer, copy_size);
@@ -56,7 +65,13 @@ int save_http_res(char* read_buffer, char* http_mes_buffer, int copy_size, int* 
 
 
 int pars_cli_head(connection* conn, char* line) {
-    char* word = strtok(line, " ");
+
+    int cur_pars_pos = 0;
+    int size_new_part = delimeter(cur_pars_pos, line, " ");
+    cur_pars_pos += size_new_part;
+
+
+    char* word = line;
     int count_word = 0;
     while (word != NULL) {
         int size_word  = strlen(word) + 1;
@@ -337,7 +352,7 @@ pars_status pars_head(connection* conn, connect_with src) {
 pars_status pars_body(connection* conn) {
     int data_size = conn->read_buffer_size;
     do_save_http_res(conn->read_buffer_size, conn);
-    printf("conn->need_body_size %d data_size %d \n", conn->need_body_size,  data_size);
+    //printf("conn->need_body_size %d data_size %d \n", conn->need_body_size,  data_size);
     conn->need_body_size -= data_size;
     if (conn->need_body_size == 0) {
         return ALL_PARS;
