@@ -6,7 +6,6 @@
 
 #define MAX_MESSAGE_LEN 100 * 1024
 #define MAX_HTTP_SIZE 100 * 1024
-#define git 100 * 1024
 
 typedef  enum {
     CLIENT,
@@ -55,9 +54,9 @@ typedef struct http_mes {
 typedef struct connection {
     int fd;
     int read_buffer_size;
-    char read_buffer[MAX_MESSAGE_LEN];
-    char write_buffer[MAX_MESSAGE_LEN];
-    char http_mes_buffer[MAX_HTTP_SIZE + 1];
+    char* read_buffer;
+    char* write_buffer;
+    char* http_mes_buffer;
     int size_http_res;
     int need_body_size;
     http_mes*  http;

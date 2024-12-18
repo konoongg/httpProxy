@@ -19,7 +19,8 @@
 #include "worker.h"
 
 thread_local int shutdown_with_wait;
-thread_local  conn_info* conns = NULL;
+thread_local conn_info* conns = NULL;
+thread_local int conns_size = MAX_CONNECTIONS;
 
 #define check_err(err, message, s_fd, ring, coons, end) \
     if (err == -1) { \
@@ -40,9 +41,18 @@ thread_local  conn_info* conns = NULL;
 #define get_conn_i_id(conn_i, conn_i_id, fd) \
     conn_i_id = get_conn_i(conn_i, fd); \
     if (conn_i_id == -1) { \
-        return -EAGAIN; \
+        create_new_conn_i(); \
+        for (int i = conns_size; i < 2 * conns_size; ++i)  {\
+            int err = conn_init(&(conns[i])); \
+            if (err == -1) { \
+                return -1; \
+            } \
+        } \
+        conn_i_id = get_conn_i(conn_i, fd); \
+        if (conn_i_id == -1) { \
+            return -1; \
+        } \
     }
-
 
 #define finalize(err, s_fd) \
     err = close(s_fd); \
@@ -53,7 +63,7 @@ thread_local  conn_info* conns = NULL;
 
 #define finalize_with_ring(err, s_fd, ring, coons, end) \
         printf("finalize_with_ring \n");\
-        for (int i = 0; i < MAX_CONNECTIONS; ++i ) { \
+        for (int i = 0; i < conns_size; ++i ) { \
             free_conn_info(&(coons[i])); \
         } \
         free(coons); \
@@ -65,7 +75,7 @@ thread_local  conn_info* conns = NULL;
 
 #define create_server_connect(conn, listen_socket_fd, ring, end) \
         connection* client = conn->client;\
-        err = resolve_domain(client->http->host, conns->sockaddr);\
+        err = resolve_domain(client->http->host, conn->sockaddr);\
         if (err == -1) { \
             free_conn_info(conn); \
         } \
@@ -75,7 +85,7 @@ thread_local  conn_info* conns = NULL;
             finalize_with_ring(err, listen_socket_fd, ring, conns, end); \
         }\
         conn->server->fd = server_fd; \
-        err = connect(server_fd, (struct sockaddr*)conns->sockaddr, sizeof(*(conns->sockaddr)));\
+        err = connect(server_fd, (struct sockaddr*)conn->sockaddr, sizeof(*(conn->sockaddr)));\
         if (err == -1) { \
             fprintf(stderr, "connect failed: %s\n", strerror(errno)); \
             free_conn_info(conn); \
@@ -94,7 +104,10 @@ thread_local  conn_info* conns = NULL;
     connection->http->method = NULL; \
     connection->http->host = NULL; \
     connection->http->headers = NULL;\
-    connection->http->status_mes = NULL;
+    connection->http->status_mes = NULL;\
+    connection->read_buffer = NULL; \
+    connection->write_buffer = NULL; \
+    connection->http_mes_buffer = NULL;
 
 #define save_free(memmory) \
     free(memmory); \
@@ -128,9 +141,25 @@ thread_local  conn_info* conns = NULL;
             } \
             connection->fd = -1; \
         }\
+        save_free(connection->read_buffer);\
+        save_free(connection->write_buffer);\
+        save_free(connection->http_mes_buffer);\
         save_free(connection);
 
 
+int create_new_conn_i() {
+    conn_info* new_conns = (conn_info*)calloc(conns_size *2, sizeof(conn_info));
+    if (conns == NULL) {
+      	fprintf(stderr, "can't malloc %s\n", strerror(errno));
+        return -1;
+    }
+    memcpy(new_conns, conns, conns_size * sizeof(conn_info));
+    conns_size *= 2;
+    free(conns);
+    conns = new_conns;
+    printf("create new connect struct: new size %d \n", conns_size);
+    return 0;
+}
 
 int free_conn_info(conn_info* conn) {
     int err;
@@ -150,7 +179,7 @@ void cleanup_handler(void *arg) {
     worker_end* end = (worker_end*)arg;
 
     if (end->mode == FIN_WITH_RING) {
-        for (int i = 0; i < MAX_CONNECTIONS; ++i ) {
+        for (int i = 0; i < conns_size; ++i ) {
             free_conn_info(&((end->conns)[i]));
         }
         free(end->conns);
@@ -195,7 +224,7 @@ int conn_init(conn_info* conn_i) {
 }
 
 int get_conn_i(conn_info* conn_i, int fd) {
-    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+    for (int i = 0; i < conns_size; i++) {
         int err = conn_init(&(conn_i[i]));
         if (err == -1) {
             return -1;
@@ -205,7 +234,7 @@ int get_conn_i(conn_info* conn_i, int fd) {
         }
     }
 
-    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+    for (int i = 0; i < conns_size; i++) {
         if (conn_i[i].client->fd == -1) {
         	return i;
         }
@@ -220,6 +249,40 @@ int add_accept(struct io_uring *ring, int fd, struct sockaddr *client_addr, sock
     get_sqe(ring, sqe);
     get_conn_i_id(conn_i, conn_i_id, fd);
     conn_info* conn = &conn_i[conn_i_id];
+
+    conn->client->read_buffer = (char*)malloc(MAX_MESSAGE_LEN * sizeof(char));
+    if (conn->client->read_buffer == NULL) {
+        fprintf(stderr, "can't malloc: %s\n", strerror(errno));
+        return -1;
+    }
+    conn->client->write_buffer = (char*)malloc(MAX_MESSAGE_LEN * sizeof(char));
+    if (conn->client->write_buffer == NULL) {
+        fprintf(stderr, "can't malloc: %s\n", strerror(errno));
+        return -1;
+    }
+    conn->client->http_mes_buffer = (char*)malloc(MAX_HTTP_SIZE * sizeof(char));
+    if (conn->client->http_mes_buffer == NULL) {
+        fprintf(stderr, "can't malloc: %s\n", strerror(errno));
+        return -1;
+    }
+
+
+    conn->server->read_buffer = (char*)malloc(MAX_MESSAGE_LEN * sizeof(char));
+    if (conn->server->read_buffer == NULL) {
+        fprintf(stderr, "can't malloc: %s\n", strerror(errno));
+        return -1;
+    }
+    conn->server->write_buffer = (char*)malloc(MAX_MESSAGE_LEN * sizeof(char));
+    if (conn->server->write_buffer == NULL) {
+        fprintf(stderr, "can't malloc: %s\n", strerror(errno));
+        return -1;
+    }
+    conn->server->http_mes_buffer = (char*)malloc(MAX_HTTP_SIZE * sizeof(char));
+    if (conn->server->http_mes_buffer == NULL) {
+        fprintf(stderr, "can't malloc: %s\n", strerror(errno));
+        return -1;
+    }
+
     io_uring_prep_accept(sqe, fd, client_addr, client_len, 0);
     conn->client->fd = fd;
     conn->type = ACCEPT;
@@ -272,7 +335,7 @@ int add_socket_write_server(struct io_uring *ring, int fd, conn_info* conn) {
 }
 
 void check_finish_proxing() {
-    for (int i = 0; i < MAX_CONNECTIONS; ++i) {
+    for (int i = 0; i < conns_size; ++i) {
         if (conns[i].type != ACCEPT) {
             return;
         }
@@ -411,7 +474,7 @@ void* start_worker(void* argv) {
 	}
 
     end->ring = &ring;
-    conns = (conn_info*)calloc(MAX_CONNECTIONS, sizeof(conn_info));
+    conns = (conn_info*)calloc(conns_size, sizeof(conn_info));
     if (conns == NULL) {
       	fprintf(stderr, "can't malloc\n");
         finalize(err, listen_socket_fd);
@@ -419,14 +482,12 @@ void* start_worker(void* argv) {
     end->conns = conns;
     if (!(params.features & IORING_FEAT_FAST_POLL)) {
       	fprintf(stderr, "IORING_FEAT_FAST_POLL not available in the kernel, quiting...\n");
-            printf("f 3\n");
         finalize_with_ring(err, listen_socket_fd, ring, conns, end);
     }
 
-    for (int i = 0; i < MAX_CONNECTIONS; ++i) {
+    for (int i = 0; i < conns_size; ++i) {
         int err = conn_init(&(conns[i]));
         if (err == -1) {
-            printf("f 1\n");
             finalize_with_ring(err, listen_socket_fd, ring, conns, end);
         }
     }
@@ -436,11 +497,9 @@ void* start_worker(void* argv) {
     err = add_accept(&ring, listen_socket_fd, (struct sockaddr *) &client_addr, &client_len, conns);
     printf("thread %d start accepting \n", gettid());
     if (err == -1) {
-        printf("f 2\n");
 		finalize_with_ring(err, listen_socket_fd, ring, conns, end);
     } else if (err == -EAGAIN) {
         fprintf(stderr, "max connection, start accept try again\n");
-        printf("f 4\n");
 		finalize_with_ring(err, listen_socket_fd, ring, conns, end);
     }
 

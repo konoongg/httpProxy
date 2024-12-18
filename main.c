@@ -203,7 +203,7 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
 
-    err = init_cache(set->init_cache_size, set->cache_ttl);
+    //err = init_cache(set->init_cache_size, set->cache_ttl);
 
     tids = (pthread_t*)malloc(set->max_count_threads * sizeof(pthread_t));
     if (tids == NULL) {
@@ -217,7 +217,7 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
 
-    finish_cache();
+    //finish_cache();
     free(set);
     free(tids);
     printf("finish\n");
