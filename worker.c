@@ -68,7 +68,7 @@ thread_local int listen_socket_fd = -1;
     connection->fd = -1; \
     connection->read_buffer_size = 0; \
     connection->size_http_res = 0; \
-    connection->need_body_size = 0; \
+    connection->need_send_size = 0; \
     connection->http = (http_mes*)malloc(sizeof(http_mes)); \
     connection->http->domain = NULL; \
     connection->http->version = NULL; \
@@ -424,7 +424,6 @@ proc_status proccess_accept(int res, conn_info* conn, struct io_uring* ring, con
         free_conn_info(conn);
         return PROC_CON;
     }
-
     if (res < 0) {
         fprintf(stderr, "ACCEPT failed %s \n", strerror(-res));
         return PROC_ERR;
@@ -441,26 +440,63 @@ proc_status proccess_accept(int res, conn_info* conn, struct io_uring* ring, con
     return PROC_OK;
 }
 
+proc_status proccess_cache(conn_info* conn, struct io_uring* ring) {
+
+    connection* server = conn->server;
+    cache_data_status status =  get_cache(conn->cache_i->cache_key, server->http_mes_buffer, MAX_HTTP_SIZE, conn->cache_i->count_write, &server->size_http_res);
+    printf("status %d \n", status);
+    if (status == NO_DATA || status == CACHE_ERR) {
+        printf("NO DATA \n");
+        int err = create_server_connect(conn, ring);
+        if (err == -1) {
+            return PROC_ERR;
+        }
+    } else if (status == ALL_DATA) {
+        printf("ALL_DATA \n");
+        conn->cache_i->read_from_cache = true;
+        conn->cache_i->count_write += server->size_http_res;
+        conn->server->need_send_size = server->size_http_res + 1;
+        int err = add_socket_write_client(ring, conn->client->fd, conn);
+        if (err != 0 ) {
+            return PROC_ERR;
+        }
+    } else  if (status == FINISH) {
+        printf("FINISH \n");
+        conn->cache_i->read_from_cache = true;
+        conn->cache_i->count_write += server->size_http_res;
+        conn->server->need_send_size = server->size_http_res;
+        int err = add_socket_write_client(ring, conn->client->fd, conn);
+        if (err != 0 ) {
+            return PROC_ERR;
+        }
+    } else {
+        fprintf(stderr, "unknown cache data status \n");
+        int err = create_server_connect(conn, ring);
+        if (err == -1) {
+            return PROC_ERR;
+        }
+    }
+    return PROC_OK;
+}
+
 proc_status proccess_read(int res, conn_info* conn, struct io_uring* ring) {
     //printf("proccess_read \n");
     if (res < 0) {
         fprintf(stderr, "READ failed, disconnect %s\n", strerror(-res));
-        free_conn_info(conn);
+        return PROC_ERR;
     } else if (res == 0) {
         fprintf(stderr, "READ finish, disconnect\n");
-        free_conn_info(conn);
+        return PROC_ERR;
     } else {
         connection* client = conn->client;
         client->read_buffer_size += res;
         pars_status status = pars_head(conn->client, CLIENT);
         if (status == ALL_PARS) {
             conn->cache_i->cache_key = get_url(conn->client->http->domain, conn->client->http->host);
-            int err = create_server_connect(conn, ring);
-            if (err == -1) {
-                return PROC_ERR;
-            }
+            return proccess_cache(conn, ring);
+
         } else if (status == ERR) {
-            free_conn_info(conn);
+                return PROC_ERR;
         } else if (status == PART_PARS) {
             int err = add_socket_read_client(ring, client->fd, conn);
             if (err != 0) {
@@ -528,6 +564,9 @@ proc_status proccess_read_serv_body(int res, conn_info* conn, struct io_uring* r
                     fprintf(stderr, "Failed to write the data to the cache \n");
                 }
                 err = add_socket_write_client(ring, conn->client->fd, conn);
+                if (err != 0) {
+                    return PROC_ERR;
+                }
             }
         } else if (status == PART_PARS) {
             int err = add_socket_read_server(ring, conn->server->fd, conn, READ_SERV_BODY);
@@ -536,7 +575,11 @@ proc_status proccess_read_serv_body(int res, conn_info* conn, struct io_uring* r
             }
         } else if (status == FULL_BUFFER) {
             conn->prev_type = READ_SERV_BODY;
-            int err = add_socket_write_client(ring, conn->client->fd, conn);
+            int err = add_cache_content(conn->cache_i->cache_key, conn->server->http_mes_buffer, conn->server->size_http_res);
+            if (err != 0) {
+                fprintf(stderr, "Failed to write the data to the cache \n");
+            }
+            err = add_socket_write_client(ring, conn->client->fd, conn);
             if (err != 0) {
                 return PROC_ERR;
             }
@@ -560,7 +603,7 @@ proc_status proccess_read_serv_head(int res, conn_info* conn, struct io_uring* r
         server->read_buffer_size += res;
         pars_status status = pars_head(conn->server, SERVER);
         if (status == ALL_PARS) {
-            int http_mes_all_size = conn->server->need_body_size + conn->server->size_http_res;
+            int http_mes_all_size = conn->server->need_send_size + conn->server->size_http_res;
             int err = add_cache_req(conn->cache_i->cache_key, http_mes_all_size);
             if (err != 0) {
                 fprintf(stderr, "Failed to write the request header to the cache \n");
@@ -589,7 +632,7 @@ proc_status proccess_read_serv_head(int res, conn_info* conn, struct io_uring* r
 }
 
 proc_status proccess_write(int res, conn_info* conn, struct io_uring* ring) {
-    //printf("proccess_write \n");
+    printf("proccess_write %d\n", res);
     if (res < 0) {
         fprintf(stderr, "WRITE failed %s\n", strerror(-res));
         return PROC_ERR;
@@ -597,22 +640,28 @@ proc_status proccess_write(int res, conn_info* conn, struct io_uring* ring) {
         int need_write = conn->server->size_http_res - res;
         assert(need_write >= 0);
         connection* server = conn->server;
-        if (need_write == 0 && server->need_body_size == 0) {
+        if (need_write == 0 && server->need_send_size == 0) {
             free_conn_info(conn);
             printf("FINISH CONNECT WRITE DATA  %d\n", res);
             if (shutdown_with_wait) {
                 check_finish_proxing();
             }
+        } else if (need_write == 0 && conn->cache_i->read_from_cache) {
+            return proccess_cache(conn, ring);
         } else if (need_write == 0) {
             server->size_http_res = need_write;
             if (conn->prev_type == READ_SERV_BODY) {
                 conn->prev_type = WRITE;
                 memcpy(server->http_mes_buffer, server->read_buffer, server->read_buffer_size);
                 server->size_http_res = server->read_buffer_size;
-                server->need_body_size -= server->read_buffer_size;
+                server->need_send_size -= server->read_buffer_size;
                 server->read_buffer_size = 0;
-                if (server->need_body_size == 0) {
-                    int err = add_socket_write_client(ring, conn->client->fd, conn);
+                if (server->need_send_size == 0) {
+                    int err = add_cache_content(conn->cache_i->cache_key, conn->server->http_mes_buffer, conn->server->size_http_res);
+                    if (err != 0) {
+                        fprintf(stderr, "Failed to write the data to the cache \n");
+                    }
+                    err = add_socket_write_client(ring, conn->client->fd, conn);
                     if (err != 0) {
                         return PROC_ERR;
                     }
@@ -634,6 +683,7 @@ proc_status proccess_write(int res, conn_info* conn, struct io_uring* ring) {
             }
             memcpy(http_res_coppy, conn->server->http_mes_buffer + res, need_write);
             memcpy(conn->server->http_mes_buffer, http_res_coppy, need_write);
+            free(http_res_coppy);
             conn->server->size_http_res = need_write;
             int err = add_socket_write_client(ring, conn->client->fd, conn);
             if (err != 0) {

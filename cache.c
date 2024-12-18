@@ -64,7 +64,6 @@ uint32_t hash_function_horner(char* key) {
 
 //content without \0
 int add_cache_content(char* key, char* content, int content_size) {
-    printf("add_cache_content \n");
     uint32_t hash =  hash_function_horner(key);
     cache_bascket* hash_basket = cache[hash];
 
@@ -78,15 +77,20 @@ int add_cache_content(char* key, char* content, int content_size) {
     }
     cache_req* cur_req = hash_basket->first;
     while (cur_req != NULL) {
-        printf("check %s \n", cur_req->url);
         if (strncmp(cur_req->url, key, strlen(key) + 1) == 0) {
             memcpy(cur_req->content + cur_req->content_offset, content, content_size);
             cur_req->content_offset += content_size;
             cur_req->content[cur_req->content_offset] = '\0';
             if (cur_req->content_offset == cur_req->content_size) {
-                cur_req->all_writed = true;
-                cur_req->now_writed = false;
+                cur_req->data_status = ALL_DATA;
             }
+            time_t cur_time = time(NULL);
+            if (cur_time == (time_t) -1) {
+                fprintf(stderr, "get_cache: can't get current time %s\n", strerror(errno));
+                save_pthread_spin_unlock(&hash_basket->lock);
+                return -1;
+            }
+            cur_req->load_time = cur_time;
             save_pthread_spin_unlock(&hash_basket->lock);
             return 0;
         }
@@ -98,7 +102,6 @@ int add_cache_content(char* key, char* content, int content_size) {
 }
 
 int add_cache_req(char* key, int content_size) {
-    printf("add_cache_req %s\n", key);
     uint32_t hash =  hash_function_horner(key);
     cache_bascket* hash_basket = cache[hash];
     int err;
@@ -132,62 +135,70 @@ int add_cache_req(char* key, int content_size) {
     hash_basket->last->url = alloc_mem(strlen(key) + 1);
     if (hash_basket->last->url == NULL) {
         save_pthread_spin_unlock(&hash_basket->lock);
-        printf("4 \n");
         return -1;
     }
     memcpy(hash_basket->last->url, key, strlen(key) + 1);
-    printf("new key %s \n",hash_basket->last->url );
     hash_basket->last->content = alloc_mem(content_size + 1);
+    hash_basket->last->content_size = content_size;
     if (hash_basket->last->content == NULL) {
         free_mem(hash_basket->last->url);
         save_pthread_spin_unlock(&hash_basket->lock);
         return -1;
     }
-    hash_basket->last->now_writed = true;
-    hash_basket->last->all_writed = false;
+    hash_basket->last->data_status = HAVE_WRITER;
     save_pthread_spin_unlock(&hash_basket->lock);
     return 0;
 }
 
-int get_cache(char* key, char** content, int content_offset) {
-    printf("get_cache \n");
+cache_data_status get_cache(char* key, char* buffer, int buffer_size, int content_offset, int* count_data) {
     uint32_t hash =  hash_function_horner(key);
     cache_bascket* hash_basket = cache[hash];
+
     if (hash_basket == NULL) {
         fprintf(stderr, "hash_basket is null\n");
-        return -1;
+        return CACHE_ERR;
     }
 
     int err;
+    printf("try lick \n");
     save_pthread_spin_lock(&hash_basket->lock);
+    printf("suc lick \n");
 
     cache_req* cur_req = hash_basket->first;
     while (cur_req != NULL) {
+        printf("cur_req->url %s key %s  %d \n", cur_req->url, key, strncmp(cur_req->url, key, strlen(key) + 1));
         if (strncmp(cur_req->url, key, strlen(key) + 1) == 0) {
             time_t cur_time = time(NULL);
             if (cur_time == (time_t) -1) {
                 fprintf(stderr, "get_cache: can't get current time %s\n", strerror(errno));
                 save_pthread_spin_unlock(&hash_basket->lock);
-                *content = NULL;
-                return -1;
+                return CACHE_ERR;
             }
             double time_diff = (double)(cur_req->load_time - cur_time);
             if (cache_ttl_s != 0 &&  time_diff >= cache_ttl_s) {
+                printf("TTL\n");
                 free_mem(cur_req->content);
                 free_mem(cur_req->url);
                 save_pthread_spin_unlock(&hash_basket->lock);
-                *content = NULL;
-                return 0;
+                return NO_DATA;
             }
-            *content = cur_req->content + content_offset;
-            return 0;
+            cache_data_status ret_status = cur_req->data_status;
+            printf("cur_req->content_size(%d) - content_offset(%d) < buffer_size(%d) \n",cur_req->content_size, content_offset, buffer_size);
+            if (cur_req->content_size - content_offset < buffer_size) {
+                ret_status = FINISH;
+                *count_data = cur_req->content_size - content_offset;
+            } else {
+                *count_data = buffer_size;
+            }
+            memcpy(buffer, cur_req->content + content_offset, *count_data);
+            save_pthread_spin_unlock(&hash_basket->lock);
+            return ret_status;
         }
         cur_req = cur_req->next;
     }
 
     save_pthread_spin_unlock(&hash_basket->lock);
-    *content = NULL;
-    return 0;
+    return NO_DATA;
 }
 
 

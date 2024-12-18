@@ -59,7 +59,7 @@ typedef struct connection {
     char* write_buffer;
     char* http_mes_buffer;
     int size_http_res;
-    int need_body_size;
+    int need_send_size;
     http_mes*  http;
 } connection;
 

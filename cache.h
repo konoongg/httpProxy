@@ -21,9 +21,17 @@
 #define HASH_TABLE_SIZE 10000
 #define HASH_PARAM HASH_TABLE_SIZE - 1
 
+typedef enum {
+    ALL_DATA,
+    HAVE_WRITER,
+    NO_WRITER,
+    NO_DATA,
+    CACHE_ERR,
+    FINISH
+} cache_data_status;
+
 typedef struct cache_req {
-    bool all_writed;
-    bool now_writed;
+    cache_data_status data_status;
     char* url;
     char* content;
     time_t load_time;
@@ -41,7 +49,7 @@ typedef struct cache_bascket {
 int init_cache(size_t cache_size, int ttl_s);
 int add_cache_content(char* key, char* content, int content_size);
 int add_cache_req(char* key, int content_size);
-int get_cache(char* key, char** content,  int content_offset);
+cache_data_status get_cache(char* key, char* buffer, int buffer_size, int content_offset, int* count_data);
 int finish_cache();
 
 #endif

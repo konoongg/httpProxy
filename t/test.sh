@@ -8,4 +8,4 @@ curl -o results/m_result-3 --http0.9 --http1.0 --progress-bar  --proxy1.0 localh
 
 cd os-proxy-tests
 ./1-sequential.sh
-./2-concurrent-batches.sh
+#./2-concurrent-batches.sh

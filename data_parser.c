@@ -316,7 +316,7 @@ int pars_http_header(connection* conn, connect_with src) {
         char host[5] = "Host";
         if (strncmp(conn->http->headers->last->key, content_length, 15) == 0) {
             char* endptr;
-            conn->need_body_size =  (int)strtol(lines[i] + key_size + 1, &endptr, 10);
+            conn->need_send_size =  (int)strtol(lines[i] + key_size + 1, &endptr, 10);
             if (endptr == lines[i]) {
                 fprintf(stderr, "http head parsing: No digits were found\n");
                 for (int i = 0; i < num_line; ++i) {
@@ -372,11 +372,11 @@ pars_status pars_head(connection* conn, connect_with src) {
 pars_status pars_body(connection* conn) {
     int data_size = conn->read_buffer_size;
     do_save_http_res(conn->read_buffer_size, conn);
-    conn->need_body_size -= data_size;
-    //printf("conn->need_body_size (%d) -= data_size(%d) \n", conn->need_body_size, data_size );
-    if (conn->need_body_size == 0) {
+    conn->need_send_size -= data_size;
+    //printf("conn->need_send_size (%d) -= data_size(%d) \n", conn->need_send_size, data_size );
+    if (conn->need_send_size == 0) {
         return ALL_PARS;
     }
-    assert(conn->need_body_size >= 0);
+    assert(conn->need_send_size >= 0);
     return PART_PARS;
 }
