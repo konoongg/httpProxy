@@ -20,7 +20,8 @@ typedef enum {
     WRITE_TO_SERV,
     READ_SERV_HEAD,
     READ_SERV_BODY,
-    WRITE
+    WRITE,
+    UPDATE_CACHE,
 } type_ev;
 
 typedef struct http_header {
@@ -33,8 +34,6 @@ typedef struct http_headers {
     struct http_header* first;
     struct http_header* last;
 } http_headers;
-
-
 
 typedef enum method_type {
     GET,
@@ -63,11 +62,14 @@ typedef struct connection {
     http_mes*  http;
 } connection;
 
-
 typedef struct cache_info {
     char* cache_key;
     bool read_from_cache;
     unsigned int count_write;
+    unsigned int write_without_cache;
+    int pipe_fd[2]; // wait sym w - wake up (need check cache), b - broke (need start load)
+    char cache_wake_up;
+    bool pipe_open;
 } cache_info;
 
 typedef struct conn_info {

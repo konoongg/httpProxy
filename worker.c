@@ -142,6 +142,17 @@ int free_conn_info(conn_info* conn) {
     conn->type = ACCEPT;
     if (conn->cache_i != NULL) {
         save_free(conn->cache_i->cache_key);
+        if (conn->cache_i->pipe_open) {
+            int err = close(conn->cache_i->pipe_fd[0]);
+            if (err == -1) {
+                fprintf(stderr, "close: %s\n", strerror(errno));
+            }
+
+            err = close(conn->cache_i->pipe_fd[1]);
+            if (err == -1) {
+                fprintf(stderr, "close: %s\n", strerror(errno));
+            }
+        }
     }
     save_free(conn->cache_i);
     return 0;
@@ -202,8 +213,9 @@ int conn_init(conn_info* conn_i) {
         conn_i->cache_i->cache_key = NULL;
         conn_i->cache_i->read_from_cache = false;
         conn_i->cache_i->count_write = 0;
-        }
-
+        conn_i->cache_i->write_without_cache = 0;
+        conn_i->cache_i->pipe_open = false;
+    }
     return 0;
 }
 
@@ -281,6 +293,16 @@ int add_socket_read_client(struct io_uring *ring, int fd, conn_info* conn) {
     connection* client = conn->client;
     io_uring_prep_recv(sqe, fd, (void*)(client->read_buffer + client->read_buffer_size), MAX_MESSAGE_LEN - client->read_buffer_size, 0);
     conn->type = READ;
+    io_uring_sqe_set_data(sqe, conn);
+    return 0;
+}
+
+int add_wait_cache(struct io_uring *ring, conn_info* conn) {
+    struct io_uring_sqe* sqe;
+    get_sqe(ring, sqe);
+    cache_info* cache_i = conn->cache_i;
+    io_uring_prep_read(sqe, cache_i->pipe_fd[0], &cache_i->cache_wake_up, 1, 0);
+    conn->type = UPDATE_CACHE;
     io_uring_sqe_set_data(sqe, conn);
     return 0;
 }
@@ -445,14 +467,46 @@ proc_status proccess_cache(conn_info* conn, struct io_uring* ring) {
     connection* server = conn->server;
     cache_data_status status =  get_cache(conn->cache_i->cache_key, server->http_mes_buffer, MAX_HTTP_SIZE, conn->cache_i->count_write, &server->size_http_res);
     printf("status %d \n", status);
-    if (status == NO_DATA || status == CACHE_ERR) {
-        printf("NO DATA \n");
+    if (status == NO_DATA || status == CACHE_ERR ) {
+        //printf("NO DATA \n");
         int err = create_server_connect(conn, ring);
         if (err == -1) {
             return PROC_ERR;
         }
-    } else if (status == ALL_DATA) {
-        printf("ALL_DATA \n");
+    } else if (status == NO_WRITER) {
+        conn->cache_i->read_from_cache = false;
+        int err = create_server_connect(conn, ring);
+        if (err == -1) {
+            return PROC_ERR;
+        }
+    } else if (status == HAVE_WRITER) {
+
+        int err = pipe(conn->cache_i->pipe_fd);
+        if (err == -1) {
+            fprintf(stderr, "pipe error: %s", strerror(errno));
+            int err = create_server_connect(conn, ring);
+            if (err == -1) {
+                return PROC_ERR;
+            }
+        }
+
+        err = add_cache_cd(conn->cache_i->cache_key, conn->cache_i->pipe_fd[1]);
+        if (err == -1) {
+            int err = create_server_connect(conn, ring);
+            if (err == -1) {
+                return PROC_ERR;
+            }
+        }
+
+        conn->cache_i->pipe_open = true;
+
+        err = add_wait_cache(ring, conn);
+        if (err != 0 ) {
+            return PROC_ERR;
+        }
+
+    } else if (status == DATA) {
+        //printf("ALL_DATA \n");
         conn->cache_i->read_from_cache = true;
         conn->cache_i->count_write += server->size_http_res;
         conn->server->need_send_size = server->size_http_res + 1;
@@ -461,7 +515,7 @@ proc_status proccess_cache(conn_info* conn, struct io_uring* ring) {
             return PROC_ERR;
         }
     } else  if (status == FINISH) {
-        printf("FINISH \n");
+        //printf("FINISH \n");
         conn->cache_i->read_from_cache = true;
         conn->cache_i->count_write += server->size_http_res;
         conn->server->need_send_size = server->size_http_res;
@@ -470,7 +524,7 @@ proc_status proccess_cache(conn_info* conn, struct io_uring* ring) {
             return PROC_ERR;
         }
     } else {
-        fprintf(stderr, "unknown cache data status \n");
+        //fprintf(stderr, "unknown cache data status \n");
         int err = create_server_connect(conn, ring);
         if (err == -1) {
             return PROC_ERR;
@@ -534,6 +588,23 @@ proc_status proccess_write_to_serv(int res, conn_info* conn, struct io_uring* ri
     return PROC_OK;
 }
 
+int do_write(conn_info* conn, struct io_uring* ring) {
+    int yet_write = conn->cache_i->write_without_cache - conn->cache_i->count_write;
+    conn->cache_i->write_without_cache += conn->server->size_http_res;
+    if (yet_write > 0 || conn->cache_i->count_write == 0) {
+        if (yet_write < conn->server->size_http_res && conn->cache_i->count_write != 0) {
+            char* http_mes_buffer = conn->server->http_mes_buffer;
+            conn->server->size_http_res -= yet_write;
+            http_mes_buffer = memmove(http_mes_buffer, http_mes_buffer  + yet_write, conn->server->size_http_res);
+        }
+    }
+    int err = add_socket_write_client(ring, conn->client->fd, conn);
+    if (err != 0) {
+        return -1;
+    }
+    return 0;
+}
+
 proc_status proccess_read_serv_body(int res, conn_info* conn, struct io_uring* ring) {
     //printf("proccess_read_serv_body res %d\n", res);
     if (res < 0) {
@@ -563,7 +634,8 @@ proc_status proccess_read_serv_body(int res, conn_info* conn, struct io_uring* r
                 if (err != 0) {
                     fprintf(stderr, "Failed to write the data to the cache \n");
                 }
-                err = add_socket_write_client(ring, conn->client->fd, conn);
+
+                err = do_write(conn, ring);
                 if (err != 0) {
                     return PROC_ERR;
                 }
@@ -579,7 +651,7 @@ proc_status proccess_read_serv_body(int res, conn_info* conn, struct io_uring* r
             if (err != 0) {
                 fprintf(stderr, "Failed to write the data to the cache \n");
             }
-            err = add_socket_write_client(ring, conn->client->fd, conn);
+            err = do_write(conn, ring);
             if (err != 0) {
                 return PROC_ERR;
             }
@@ -604,10 +676,12 @@ proc_status proccess_read_serv_head(int res, conn_info* conn, struct io_uring* r
         pars_status status = pars_head(conn->server, SERVER);
         if (status == ALL_PARS) {
             int http_mes_all_size = conn->server->need_send_size + conn->server->size_http_res;
-            int err = add_cache_req(conn->cache_i->cache_key, http_mes_all_size);
-            if (err != 0) {
-                fprintf(stderr, "Failed to write the request header to the cache \n");
-                return PROC_ERR;
+            if (server->http->status / 100 != 3) {
+                int err = add_cache_req(conn->cache_i->cache_key, http_mes_all_size);
+                if (err != 0) {
+                    fprintf(stderr, "Failed to write the request header to the cache \n");
+                    return PROC_ERR;
+                }
             }
             int new_res = res - conn->server->size_http_res;
             if (res > conn->server->size_http_res) {
@@ -632,7 +706,7 @@ proc_status proccess_read_serv_head(int res, conn_info* conn, struct io_uring* r
 }
 
 proc_status proccess_write(int res, conn_info* conn, struct io_uring* ring) {
-    printf("proccess_write %d\n", res);
+    //printf("proccess_write %d\n", res);
     if (res < 0) {
         fprintf(stderr, "WRITE failed %s\n", strerror(-res));
         return PROC_ERR;
@@ -692,6 +766,35 @@ proc_status proccess_write(int res, conn_info* conn, struct io_uring* ring) {
         }
     }
     return PROC_OK;
+}
+
+proc_status proccess_update_cache(int res, conn_info* conn, struct io_uring* ring) {
+    printf("proccess_update_cache \n");
+    if (res < 0) {
+        fprintf(stderr, "WRITE failed %s\n", strerror(-res));
+        return PROC_ERR;
+    }
+    if (res != 1) {
+        int err = add_wait_cache(ring, conn);
+        if (err != 0 ) {
+            return PROC_ERR;
+        }
+
+    }
+
+    int err = close(conn->cache_i->pipe_fd[0]);
+    if (err == -1) {
+        fprintf(stderr, "close: %s\n", strerror(errno));
+        return PROC_ERR;
+    }
+
+    err = close(conn->cache_i->pipe_fd[1]);
+    if (err == -1) {
+        fprintf(stderr, "close: %s\n", strerror(errno));
+        return PROC_ERR;
+    }
+    conn->cache_i->pipe_open = false;
+    return proccess_cache(conn, ring);
 }
 
 void* start_worker(void* argv) {
@@ -845,6 +948,11 @@ void* start_worker(void* argv) {
                 }
             } else if (type == WRITE) {
               	proc_status status = proccess_write(res, conn, &ring);
+                if (status == PROC_ERR) {
+                    free_conn_info(conn);
+                }
+            } else if (type == UPDATE_CACHE) {
+                proc_status status = proccess_update_cache(res, conn, &ring);
                 if (status == PROC_ERR) {
                     free_conn_info(conn);
                 }

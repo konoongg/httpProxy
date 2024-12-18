@@ -39,7 +39,6 @@
         exit(EXIT_FAILURE); \
     }
 
-
 typedef struct settings {
   uint32 port;
   uint32 max_count_threads;

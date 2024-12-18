@@ -22,13 +22,18 @@
 #define HASH_PARAM HASH_TABLE_SIZE - 1
 
 typedef enum {
-    ALL_DATA,
+    DATA,
     HAVE_WRITER,
     NO_WRITER,
     NO_DATA,
     CACHE_ERR,
     FINISH
 } cache_data_status;
+
+typedef struct wait_list {
+    struct wait_list* next;
+    int pipe_fd;
+} wait_list;
 
 typedef struct cache_req {
     cache_data_status data_status;
@@ -38,6 +43,7 @@ typedef struct cache_req {
     int content_offset;
     int content_size;
     struct cache_req* next;
+    wait_list* wait_l;
 } cache_req;
 
 typedef struct cache_bascket {
@@ -49,6 +55,7 @@ typedef struct cache_bascket {
 int init_cache(size_t cache_size, int ttl_s);
 int add_cache_content(char* key, char* content, int content_size);
 int add_cache_req(char* key, int content_size);
+int add_cache_cd(char* key, int fd);
 cache_data_status get_cache(char* key, char* buffer, int buffer_size, int content_offset, int* count_data);
 int finish_cache();
 
