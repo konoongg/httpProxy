@@ -26,6 +26,12 @@ typedef enum {
     FIN_WITH_RING
 } fin_mode;
 
+typedef enum {
+    PROC_ERR,
+    PROC_OK,
+    PROC_CON,
+} proc_status;
+
 
 typedef struct worker_end {
     fin_mode mode;

@@ -83,6 +83,10 @@ int add_cache_content(char* key, char* content, int content_size) {
             memcpy(cur_req->content + cur_req->content_offset, content, content_size);
             cur_req->content_offset += content_size;
             cur_req->content[cur_req->content_offset] = '\0';
+            if (cur_req->content_offset == cur_req->content_size) {
+                cur_req->all_writed = true;
+                cur_req->now_writed = false;
+            }
             save_pthread_spin_unlock(&hash_basket->lock);
             return 0;
         }
@@ -139,6 +143,8 @@ int add_cache_req(char* key, int content_size) {
         save_pthread_spin_unlock(&hash_basket->lock);
         return -1;
     }
+    hash_basket->last->now_writed = true;
+    hash_basket->last->all_writed = false;
     save_pthread_spin_unlock(&hash_basket->lock);
     return 0;
 }

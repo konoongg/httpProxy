@@ -1,6 +1,7 @@
 #ifndef STRUCT_H
 #define STRUCT_H
 
+#include <stdbool.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 
@@ -62,14 +63,21 @@ typedef struct connection {
     http_mes*  http;
 } connection;
 
-    typedef struct conn_info {
-        type_ev type;
-        type_ev prev_type;
-        struct sockaddr_in* sockaddr;
-        connection* client;
-        connection* server;
-        char* cache_key;
-    } conn_info;
+
+typedef struct cache_info {
+    char* cache_key;
+    bool read_from_cache;
+    unsigned int count_write;
+} cache_info;
+
+typedef struct conn_info {
+    type_ev type;
+    type_ev prev_type;
+    struct sockaddr_in* sockaddr;
+    connection* client;
+    connection* server;
+    cache_info* cache_i;
+} conn_info;
 
 typedef enum {
     ALL_PARS,

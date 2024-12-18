@@ -373,6 +373,7 @@ pars_status pars_body(connection* conn) {
     int data_size = conn->read_buffer_size;
     do_save_http_res(conn->read_buffer_size, conn);
     conn->need_body_size -= data_size;
+    //printf("conn->need_body_size (%d) -= data_size(%d) \n", conn->need_body_size, data_size );
     if (conn->need_body_size == 0) {
         return ALL_PARS;
     }
