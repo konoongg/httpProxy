@@ -32,6 +32,13 @@
         } \
     }
 
+#define save_finish_cache()\
+    err = finish_cache();\
+    if (err != 0) { \
+        printf("Incorrect cache release \n"); \
+        exit(EXIT_FAILURE); \
+    }
+
 
 typedef struct settings {
   uint32 port;
@@ -203,21 +210,27 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
 
-    //err = init_cache(set->init_cache_size, set->cache_ttl);
-
-    tids = (pthread_t*)malloc(set->max_count_threads * sizeof(pthread_t));
-    if (tids == NULL) {
-        fprintf(stderr, "can't alloc memmro: %s\n", strerror(errno));
-        free(set);
-        exit(EXIT_FAILURE);
-    }
-    err = init_workers(set->max_count_threads, set->port, tids);
+    err = init_cache(set->init_cache_size, set->cache_ttl);
     if (err != 0) {
         free(set);
         exit(EXIT_FAILURE);
     }
 
-    //finish_cache();
+    tids = (pthread_t*)malloc(set->max_count_threads * sizeof(pthread_t));
+    if (tids == NULL) {
+        fprintf(stderr, "can't alloc memmro: %s\n", strerror(errno));
+        free(set);
+        save_finish_cache();
+        exit(EXIT_FAILURE);
+    }
+    err = init_workers(set->max_count_threads, set->port, tids);
+    if (err != 0) {
+        free(set);
+        save_finish_cache();
+        exit(EXIT_FAILURE);
+    }
+
+    save_finish_cache();
     free(set);
     free(tids);
     printf("finish\n");

@@ -24,7 +24,6 @@ thread_local int conns_size = MAX_CONNECTIONS;
 
 #define check_err(err, message, s_fd, ring, coons, end) \
     if (err == -1) { \
-        printf("f 2\n"); \
 		finalize_with_ring(err, listen_socket_fd, ring, coons, end); \
     } else if (err == -EAGAIN) { \
         fprintf(stderr, message); \
@@ -113,8 +112,6 @@ thread_local int conns_size = MAX_CONNECTIONS;
     free(memmory); \
     memmory = NULL;
 
-
-
 #define free_connection(connection) \
         save_free(connection->http->domain); \
         save_free(connection->http->host); \
@@ -171,6 +168,7 @@ int free_conn_info(conn_info* conn) {
         free_connection(conn->server);
     };
     conn->type = ACCEPT;
+    save_free(conn->cache_key);
     return 0;
 }
 
@@ -249,7 +247,7 @@ int add_accept(struct io_uring *ring, int fd, struct sockaddr *client_addr, sock
     get_sqe(ring, sqe);
     get_conn_i_id(conn_i, conn_i_id, fd);
     conn_info* conn = &conn_i[conn_i_id];
-
+    conn->cache_key = NULL;
     conn->client->read_buffer = (char*)malloc(MAX_MESSAGE_LEN * sizeof(char));
     if (conn->client->read_buffer == NULL) {
         fprintf(stderr, "can't malloc: %s\n", strerror(errno));
@@ -408,11 +406,11 @@ int init_signals() {
     return 0;
 }
 
+
 void* start_worker(void* argv) {
     shutdown_with_wait = 0;
     int err = init_signals();
     if (err == -1) {
-        printf("EXIT 3%d\n", gettid());
         return NULL;
     }
 
@@ -425,7 +423,6 @@ void* start_worker(void* argv) {
     end->ring = NULL;
     if (end == NULL) {
         fprintf(stderr, "can't malloc: %s\n", strerror(errno));
-        printf("EXIT 4%d\n", gettid());
         return NULL;
     }
 
@@ -434,7 +431,6 @@ void* start_worker(void* argv) {
     pthread_cleanup_push(cleanup_handler, end);
     if (listen_socket_fd == -1) {
         fprintf(stderr, "socket failed: %s\n", strerror(errno));
-        printf("EXIT 5%d\n", gettid());
         return NULL;
     }
 
@@ -490,6 +486,7 @@ void* start_worker(void* argv) {
         if (err == -1) {
             finalize_with_ring(err, listen_socket_fd, ring, conns, end);
         }
+        (conns[i]).cache_key = NULL;
     }
 
     struct sockaddr_in client_addr;
@@ -561,10 +558,7 @@ void* start_worker(void* argv) {
                     client->read_buffer_size += res;
                     pars_status status = pars_head(conn->client, CLIENT);
                     if (status == ALL_PARS) {
-                        char* url = get_url(conn->client->http->domain, conn->client->http->host);
-
-                        //int err = get_cache(url, conn->server->http_mes_buffer, );
-                        free(url);
+                        conn->cache_key = get_url(conn->client->http->domain, conn->client->http->host);
                         create_server_connect(conn, listen_socket_fd, ring, end);
                     } else if (status == ERR) {
                     	free_conn_info(conn);
@@ -592,7 +586,7 @@ void* start_worker(void* argv) {
                         check_err(err, "max connection, try add accept again\n", listen_socket_fd, ring, conns, end);
                     }
                 }
-            } else if (type == READ_SERV_HEAD) {
+            } else if (type == READ_SERV_HEAD) {;
               	//printf("READ_SERV_HEAD tid: %d\n", gettid());
                 if (res < 0) {
                     fprintf(stderr, "READ failed, disconnect %s\n", strerror(-res));
@@ -605,6 +599,12 @@ void* start_worker(void* argv) {
                     server->read_buffer_size += res;
                     pars_status status = pars_head(conn->server, SERVER);
                     if (status == ALL_PARS) {
+                        int http_mes_all_size = conn->server->need_body_size + conn->server->size_http_res;
+                        err = add_cache_req(conn->cache_key, http_mes_all_size);
+                        if (err != 0) {
+                            fprintf(stderr, "Failed to write the request header to the cache \n");
+                        }
+
                         status = pars_body(conn->server);
                         if (status == ALL_PARS) {
                             if (server->http->status / 100 == 3) {
@@ -615,11 +615,15 @@ void* start_worker(void* argv) {
                                 } else {
                                     err = close(conn->server->fd);
                                     if (err == -1) {
-                                    fprintf(stderr, "close: %s\n", strerror(errno));
+                                        fprintf(stderr, "close: %s\n", strerror(errno));
                                     }
                                     create_server_connect(conn, listen_socket_fd, ring, end);
                                 }
                             } else {
+                                err = add_cache_content(conn->cache_key, conn->server->http_mes_buffer, conn->server->size_http_res);
+                                if (err != 0) {
+                                    fprintf(stderr, "Failed to write the data to the cache \n");
+                                }
                                 err = add_socket_write_client(&ring, conn->client->fd, conn);
                                 check_err(err, "max connection, try write cleint answer again\n", listen_socket_fd, ring, conns, end);
                             }
@@ -666,6 +670,10 @@ void* start_worker(void* argv) {
                                 create_server_connect(conn, listen_socket_fd, ring, end);
                             }
                         } else {
+                            err = add_cache_content(conn->cache_key, conn->server->http_mes_buffer, conn->server->size_http_res);
+                            if (err != 0) {
+                                fprintf(stderr, "Failed to write the data to the cache \n");
+                            }
                             err = add_socket_write_client(&ring, conn->client->fd, conn);
                             check_err(err, "max connection, try write cleint answer again\n", listen_socket_fd, ring, conns, end);
                         }

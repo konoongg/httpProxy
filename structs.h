@@ -68,6 +68,7 @@ typedef struct connection {
         struct sockaddr_in* sockaddr;
         connection* client;
         connection* server;
+        char* cache_key;
     } conn_info;
 
 typedef enum {

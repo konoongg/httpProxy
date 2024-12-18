@@ -1,21 +1,24 @@
+#include <errno.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 char* memmory = NULL;
-int memmory_size = 0;
+size_t memmory_size = 0;
 
-char* alloc_mem(uint32_t size) {
+char* alloc_mem(unsigned int size) {
     int i = 0;
     while (i < memmory_size) {
-        uint32_t size_seg = *(uint32_t*)(memmory + i);
-        if (size_seg == 0) {
-            *(memmory + i) = size;
+        unsigned int* size_seg = (unsigned int*)(memmory + i);
+        if (*size_seg == 0) {
+            *size_seg = size;
             return memmory + i + 4;
         }
-        i += 4 + size_seg;
+        i += 4 + *size_seg;
     }
+    printf("can't alloc mem \n");
     return NULL;
 }
 
@@ -24,14 +27,15 @@ void free_mem(char* mem) {
     memset((mem - 4), 0, size_seg);
 }
 
-int init_alloc(int size) {
+int init_alloc(size_t size) {
     memmory_size = size;
-    memmory = (char*) malloc(size * sizeof(char));
+    memmory = (char*) calloc(size, sizeof(char));
     if (memmory == NULL) {
-        fprintf(stderr, "malloc error: can't alloc memmory\n");
+        fprintf(stderr, "malloc error: can't alloc memmory %s\n", strerror(errno));
         return -1;
     }
-    memset(memmory, 0, size);
+
+    printf("mem %p \n", (memmory));
     return 0;
 }
 
