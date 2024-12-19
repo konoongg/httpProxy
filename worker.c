@@ -442,7 +442,7 @@ int create_server_connect(conn_info* conn, struct io_uring* ring) {
 }
 
 proc_status proccess_accept(int res, conn_info* conn, struct io_uring* ring, conn_info* conns) {
-    //printf("proccess_accept\n");
+    printf("proccess_accept\n");
     if (shutdown_with_wait) {
         free_conn_info(conn);
         return PROC_CON;

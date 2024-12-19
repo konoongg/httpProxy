@@ -110,6 +110,7 @@ int add_cache_content(char* key, char* content, int content_size) {
                     cur_wait_node = node;
                 } else if (err < 0) {
                     fprintf(stderr, "write: %s\n", strerror(errno));
+                    save_pthread_spin_unlock(&hash_basket->lock);
                     return -1;
                 }
             }
@@ -257,12 +258,10 @@ cache_data_status get_cache(char* key, char* buffer, int buffer_size, int conten
     cache_req* prev_req;
     while (cur_req != NULL) {
         if (strncmp(cur_req->url, key, strlen(key) + 1) == 0) {
-            printf("find key cur_req->content_offset %d\n", cur_req->content_offset);
             time_t cur_time = time(NULL);
             if (cur_time == (time_t) -1) {
                 fprintf(stderr, "get_cache: can't get current time %s\n", strerror(errno));
                 save_pthread_spin_unlock(&hash_basket->lock);
-                printf("f1\n");
                 return CACHE_ERR;
             }
             double time_diff = (double)(cur_req->load_time - cur_time);
@@ -270,11 +269,9 @@ cache_data_status get_cache(char* key, char* buffer, int buffer_size, int conten
                 free_mem(cur_req->content);
                 free_mem(cur_req->url);
                 save_pthread_spin_unlock(&hash_basket->lock);
-                printf("f2\n");
                 return NO_DATA;
             }
             cache_data_status ret_status = cur_req->data_status;
-            printf("content_offset %d cur_req->content_offset  %d cur_req->content_size %d \n", content_offset, cur_req->content_offset, cur_req->content_size );
             if ((cur_req->content_size - content_offset < buffer_size) && (cur_req->content_offset == cur_req->content_size)) {
                 ret_status = FINISH;
                 *count_data = cur_req->content_size - content_offset;
@@ -298,7 +295,6 @@ cache_data_status get_cache(char* key, char* buffer, int buffer_size, int conten
     if (prev_req == NULL) {
         fprintf(stderr, "malloc error: can't alloc memmory %s\n", strerror(errno));
         save_pthread_spin_unlock(&hash_basket->lock);
-        printf("f5\n");
         return CACHE_ERR;
     }
     prev_req->url = alloc_mem(strlen(key) + 1);
