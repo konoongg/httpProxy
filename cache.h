@@ -48,8 +48,8 @@ typedef struct cache_req {
 
 typedef struct cache_bascket {
     pthread_spinlock_t lock;
-    struct cache_req* first;
-    struct cache_req* last;
+    cache_req* first;
+    cache_req* last;
 } cache_bascket;
 
 int init_cache(size_t cache_size, int ttl_s);

@@ -14,14 +14,14 @@ int cache_ttl_s;
 #define save_pthread_spin_lock(lock) \
     err = pthread_spin_lock(lock); \
     if (err != 0) { \
-		printf(" pthread_spin_lock() failed: %s\n", strerror(err)); \
+		fprintf(stderr, "pthread_spin_lock() failed: %s\n", strerror(err)); \
 	    return -1; \
     }
 
 #define save_pthread_spin_unlock(lock) \
     err = pthread_spin_unlock(lock); \
     if (err != 0) { \
-		printf(" pthread_spin_unlock() failed: %s\n", strerror(err)); \
+		fprintf(stderr, "pthread_spin_unlock() failed: %s\n", strerror(err)); \
 	    return -1; \
     }
 
@@ -47,7 +47,7 @@ int init_cache(size_t cache_size, int ttl_s) {
         }
         err = pthread_spin_init(&bascket->lock, PTHREAD_PROCESS_PRIVATE);
         if (err != 0){
-            printf("queue_init: pthrpthread_spin_init() failed: %s\n", strerror(err));
+            fprintf(stderr, "pthrpthread_spin_init() failed: %s\n", strerror(err));
             abort();
         }
     }
@@ -65,6 +65,7 @@ uint32_t hash_function_horner(char* key) {
 
 //content without \0
 int add_cache_content(char* key, char* content, int content_size) {
+    printf("add_cache_content \n");
     uint32_t hash =  hash_function_horner(key);
     cache_bascket* hash_basket = cache[hash];
 
@@ -79,7 +80,6 @@ int add_cache_content(char* key, char* content, int content_size) {
     cache_req* cur_req = hash_basket->first;
     while (cur_req != NULL) {
         if (strncmp(cur_req->url, key, strlen(key) + 1) == 0) {
-            printf("cur_req %p \n", cur_req);
             memcpy(cur_req->content + cur_req->content_offset, content, content_size);
             cur_req->content_offset += content_size;
             cur_req->content[cur_req->content_offset] = '\0';
@@ -97,7 +97,6 @@ int add_cache_content(char* key, char* content, int content_size) {
             cur_req->load_time = cur_time;
 
             wait_list* cur_wait_node = cur_req->wait_l;
-            printf("cur_wait_node %p %d\n", cur_wait_node, cur_wait_node->pipe_fd);
             while (cur_wait_node != NULL) {
                 char mes = 'w';
                 int err =  write(cur_wait_node->pipe_fd, &mes, 1);
@@ -126,54 +125,37 @@ int add_cache_req(char* key, int content_size) {
     uint32_t hash =  hash_function_horner(key);
     cache_bascket* hash_basket = cache[hash];
     int err;
-
     save_pthread_spin_lock(&hash_basket->lock);
 
-    if (hash_basket->first == NULL) {
-        hash_basket->last = hash_basket->first = (cache_req*)malloc(sizeof(cache_req));
-        if (hash_basket->last == NULL) {
-            fprintf(stderr, "malloc error: can't alloc memmory\n");
+    cache_req* cur_req = hash_basket->first;
+    while (cur_req != NULL) {
+        if (strncmp(cur_req->url, key, strlen(key) + 1) == 0) {
+            cur_req->content_offset = 0;
+            cur_req->load_time = time(NULL);
+            if (cur_req->load_time  == (time_t) -1) {
+                fprintf(stderr, "can't get current time %s\n", strerror(errno));
+                save_pthread_spin_unlock(&hash_basket->lock);
+                return -1;
+            }
+            cur_req->next = NULL;
+            cur_req->content = alloc_mem(content_size + 1);
+            cur_req->content_size = content_size;
+            cur_req->wait_l = NULL;
+            if (cur_req->content == NULL) {
+                free_mem(cur_req->url);
+                save_pthread_spin_unlock(&hash_basket->lock);
+                return -1;
+            }
+            hash_basket->last->data_status = HAVE_WRITER;
             save_pthread_spin_unlock(&hash_basket->lock);
-            return -1;
+            return 0;
         }
-    } else {
-        hash_basket->last->next = (cache_req*)malloc(sizeof(cache_req));
-        if (hash_basket->last->next == NULL) {
-            fprintf(stderr, "malloc error: can't alloc memmory\n");
-            save_pthread_spin_unlock(&hash_basket->lock);
-            return -1;
-        }
-        hash_basket->last = hash_basket->last->next;
     }
-    hash_basket->last->content_offset = 0;
-    hash_basket->last->load_time = time(NULL);
-    if (hash_basket->last->load_time  == (time_t) -1) {
-        fprintf(stderr, "can't get current time %s\n", strerror(errno));
-        save_pthread_spin_unlock(&hash_basket->lock);
-        return -1;
-    }
-    hash_basket->last->next = NULL;
-    hash_basket->last->url = alloc_mem(strlen(key) + 1);
-    if (hash_basket->last->url == NULL) {
-        save_pthread_spin_unlock(&hash_basket->lock);
-        return -1;
-    }
-    memcpy(hash_basket->last->url, key, strlen(key) + 1);
-    hash_basket->last->content = alloc_mem(content_size + 1);
-    hash_basket->last->content_size = content_size;
-    hash_basket->last->wait_l = NULL;
-    if (hash_basket->last->content == NULL) {
-        free_mem(hash_basket->last->url);
-        save_pthread_spin_unlock(&hash_basket->lock);
-        return -1;
-    }
-    hash_basket->last->data_status = HAVE_WRITER;
     save_pthread_spin_unlock(&hash_basket->lock);
-    return 0;
+    return -1;
 }
 
 int add_cache_cd(char* key, int fd) {
-    printf("add cd %d \n", fd);
     uint32_t hash =  hash_function_horner(key);
     cache_bascket* hash_basket = cache[hash];
 
@@ -185,38 +167,33 @@ int add_cache_cd(char* key, int fd) {
     cache_req* cur_req = hash_basket->first;
     while (cur_req != NULL) {
         if (strncmp(cur_req->url, key, strlen(key) + 1) == 0) {
-            wait_list* cur_node;
             if (cur_req->wait_l == NULL) {
                 cur_req->wait_l = (wait_list*)malloc(sizeof(wait_list));
                 if (cur_req->wait_l == NULL) {
                     fprintf(stderr, "malloc error: can't alloc memmory\n");
                     return -1;
                 }
-                cur_node = cur_req->wait_l;
+                cur_req->wait_l->pipe_fd = fd;
+                cur_req->wait_l->next = NULL;
+                printf("new cur_req->wait_l %p next %p \n", cur_req->wait_l, cur_req->wait_l->next );
             } else {
-                cur_node = cur_req->wait_l;
+                wait_list* cur_node = cur_req->wait_l;
                 while (true) {
-                    cur_node = cur_req->wait_l;
+                    printf("find cur_node %p next  %p \n", cur_node, cur_node->next);
                     if (cur_node->next == NULL){
                         cur_node->next = (wait_list*)malloc(sizeof(wait_list));
                         if (cur_node->next == NULL) {
                             fprintf(stderr, "malloc error: can't alloc memmory\n");
                             return -1;
                         }
+                        cur_node->next = NULL;
+                        cur_node->pipe_fd = fd;
+                        printf(" new cur_node %p \n", cur_node);
                         break;
                     }
                     cur_node = cur_node->next;
                 }
             }
-            printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
-            cur_node = (wait_list*)malloc(sizeof(wait_list));
-            if (cur_node == NULL) {
-                fprintf(stderr, "malloc error: can't alloc memmory\n");
-                return -1;
-            }
-            cur_node->next = NULL;
-            cur_node->pipe_fd = fd;
-            printf("ADD CD %d %p\n", cur_node->pipe_fd, cur_node);
             return 0;
         }
         cur_req = cur_req->next;
@@ -226,6 +203,7 @@ int add_cache_cd(char* key, int fd) {
 }
 
 cache_data_status get_cache(char* key, char* buffer, int buffer_size, int content_offset, int* count_data) {
+    printf("get_cache \n");
     uint32_t hash =  hash_function_horner(key);
     cache_bascket* hash_basket = cache[hash];
 
@@ -237,10 +215,31 @@ cache_data_status get_cache(char* key, char* buffer, int buffer_size, int conten
     int err;
     save_pthread_spin_lock(&hash_basket->lock);
 
+    if (hash_basket->first == NULL) {
+        hash_basket->last = hash_basket->first = (cache_req*)malloc(sizeof(cache_req));
+        if (hash_basket->last == NULL) {
+            fprintf(stderr, "malloc error: can't alloc memmory\n");
+            save_pthread_spin_unlock(&hash_basket->lock);
+            return CACHE_ERR;
+        }
+        hash_basket->last->url = alloc_mem(strlen(key) + 1);
+        if (hash_basket->last->url == NULL) {
+            save_pthread_spin_unlock(&hash_basket->lock);
+            return CACHE_ERR;
+        }
+        memcpy(hash_basket->last->url, key, strlen(key) + 1);
+        hash_basket->last->content_offset = 0;
+        printf("hash_basket->last %p offset %d \n", hash_basket->last, hash_basket->last->content_offset);
+        printf("FIRST GET KEY \n");
+        save_pthread_spin_unlock(&hash_basket->lock);
+        return NO_DATA;
+    }
+
     cache_req* cur_req = hash_basket->first;
+    cache_req* prev_req;
     while (cur_req != NULL) {
-        printf("cur_req->url %s key %s  %d \n", cur_req->url, key, strncmp(cur_req->url, key, strlen(key) + 1));
         if (strncmp(cur_req->url, key, strlen(key) + 1) == 0) {
+            printf("find key cur_req->content_offset %d\n", cur_req->content_offset);
             time_t cur_time = time(NULL);
             if (cur_time == (time_t) -1) {
                 fprintf(stderr, "get_cache: can't get current time %s\n", strerror(errno));
@@ -255,23 +254,39 @@ cache_data_status get_cache(char* key, char* buffer, int buffer_size, int conten
                 return NO_DATA;
             }
             cache_data_status ret_status = cur_req->data_status;
-            if ((cur_req->content_size - content_offset < buffer_size) && (cur_req->content_offset = cur_req->content_size)) {
+            if ((cur_req->content_size - content_offset < buffer_size) && (cur_req->content_offset == cur_req->content_size)) {
                 ret_status = FINISH;
                 *count_data = cur_req->content_size - content_offset;
             } else if (content_offset < cur_req->content_offset) {
                 ret_status = DATA;
                 *count_data = buffer_size;
+            } else {
+                printf("NO DATA cur_req->content_offset  %d\n", cur_req->content_offset);
+                save_pthread_spin_unlock(&hash_basket->lock);
+                return ret_status;
             }
-            else {
-                *count_data = buffer_size;
-            }
+            printf("cur_req %p cur_req->content_offset %d \n", cur_req, cur_req->content_offset);
             memcpy(buffer, cur_req->content + content_offset, *count_data);
             save_pthread_spin_unlock(&hash_basket->lock);
             return ret_status;
         }
+        prev_req = cur_req;
         cur_req = cur_req->next;
     }
 
+    prev_req = (cache_req*)malloc(sizeof(cache_req));
+    if (prev_req == NULL) {
+        fprintf(stderr, "malloc error: can't alloc memmory\n");
+        save_pthread_spin_unlock(&hash_basket->lock);
+        return CACHE_ERR;
+    }
+    prev_req->url = alloc_mem(strlen(key) + 1);
+    if (prev_req->url == NULL) {
+        save_pthread_spin_unlock(&hash_basket->lock);
+        return CACHE_ERR;
+    }
+    memcpy(prev_req->url, key, strlen(key) + 1);
+    prev_req->content_offset = 0;
     save_pthread_spin_unlock(&hash_basket->lock);
     return NO_DATA;
 }
@@ -295,7 +310,7 @@ int finish_cache() {
             }
             int err = pthread_spin_destroy(&bascket->lock);
             if (err != 0) {
-                printf(" pthread_spin_destroy() failed: %s\n", strerror(err));
+                fprintf(stderr, "pthread_spin_destroy() failed: %s\n", strerror(err));
                 return -1;
             }
         }

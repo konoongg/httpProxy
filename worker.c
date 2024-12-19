@@ -442,6 +442,7 @@ int create_server_connect(conn_info* conn, struct io_uring* ring) {
 }
 
 proc_status proccess_accept(int res, conn_info* conn, struct io_uring* ring, conn_info* conns) {
+    //printf("proccess_accept\n");
     if (shutdown_with_wait) {
         free_conn_info(conn);
         return PROC_CON;
@@ -464,6 +465,7 @@ proc_status proccess_accept(int res, conn_info* conn, struct io_uring* ring, con
 
 proc_status proccess_cache(conn_info* conn, struct io_uring* ring) {
 
+   // printf("proccess_cache\n");
     connection* server = conn->server;
     cache_data_status status =  get_cache(conn->cache_i->cache_key, server->http_mes_buffer, MAX_HTTP_SIZE, conn->cache_i->count_write, &server->size_http_res);
     printf("status %d \n", status);
@@ -589,6 +591,7 @@ proc_status proccess_write_to_serv(int res, conn_info* conn, struct io_uring* ri
 }
 
 int do_write(conn_info* conn, struct io_uring* ring) {
+    //printf("do_write\n");
     int yet_write = conn->cache_i->write_without_cache - conn->cache_i->count_write;
     conn->cache_i->write_without_cache += conn->server->size_http_res;
     if (yet_write > 0 || conn->cache_i->count_write == 0) {
@@ -769,7 +772,7 @@ proc_status proccess_write(int res, conn_info* conn, struct io_uring* ring) {
 }
 
 proc_status proccess_update_cache(int res, conn_info* conn, struct io_uring* ring) {
-    printf("proccess_update_cache \n");
+    printf("proccess_update_cache %d\n" , gettid());
     if (res < 0) {
         fprintf(stderr, "WRITE failed %s\n", strerror(-res));
         return PROC_ERR;
