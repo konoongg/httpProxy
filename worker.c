@@ -468,7 +468,7 @@ proc_status proccess_cache(conn_info* conn, struct io_uring* ring) {
    // printf("proccess_cache\n");
     connection* server = conn->server;
     cache_data_status status =  get_cache(conn->cache_i->cache_key, server->http_mes_buffer, MAX_HTTP_SIZE, conn->cache_i->count_write, &server->size_http_res);
-    printf("status %d \n", status);
+    printf("status %d %d\n", status, gettid());
     if (status == NO_DATA || status == CACHE_ERR ) {
         //printf("NO DATA \n");
         int err = create_server_connect(conn, ring);
