@@ -107,13 +107,13 @@ int add_cache_content(char* key, char* content, int content_size) {
                     printf("wake up %d \n", cur_wait_node->pipe_fd);
                     wait_list* node = cur_wait_node->next;
                     free(cur_wait_node);
-                    cur_wait_node = NULL;
                     cur_wait_node = node;
                 } else if (err < 0) {
                     fprintf(stderr, "write: %s\n", strerror(errno));
                     return -1;
                 }
             }
+            cur_req->wait_l = NULL;
             save_pthread_spin_unlock(&hash_basket->lock);
             return 0;
         }
@@ -188,8 +188,9 @@ int add_cache_cd(char* key, int fd) {
             } else {
                 wait_list* cur_node = cur_req->wait_l;
                 while (true) {
-                    printf("cur_node   %p cur_node->next %p\n", cur_node, cur_node->next);
-                    if (cur_node->next == NULL){
+                    printf("cur_node   %p \n", cur_node);
+                    printf("cur_node->next %p \n", cur_node->next );
+                    if (cur_node->next == NULL) {
                         cur_node->next = (wait_list*)malloc(sizeof(wait_list));
                         if (cur_node->next == NULL) {
                             fprintf(stderr, "malloc error: can't alloc memmory\n");
@@ -273,13 +274,15 @@ cache_data_status get_cache(char* key, char* buffer, int buffer_size, int conten
                 return NO_DATA;
             }
             cache_data_status ret_status = cur_req->data_status;
+            printf("content_offset %d cur_req->content_offset  %d cur_req->content_size %d \n", content_offset, cur_req->content_offset, cur_req->content_size );
             if ((cur_req->content_size - content_offset < buffer_size) && (cur_req->content_offset == cur_req->content_size)) {
                 ret_status = FINISH;
                 *count_data = cur_req->content_size - content_offset;
-            } else if (content_offset < cur_req->content_offset) {
+            } else if (content_offset + buffer_size < cur_req->content_offset) {
                 ret_status = DATA;
                 *count_data = buffer_size;
             } else {
+                printf("WRITE NEED MORE DATA\n");
                 save_pthread_spin_unlock(&hash_basket->lock);
                 return ret_status;
             }
