@@ -281,7 +281,7 @@ cache_data_status get_cache(char* key, char* buffer, int buffer_size, int conten
     }
 
     cache_req* cur_req = hash_basket->first;
-    cache_req* prev_req;
+    cache_req* prev_req = NULL;
     while (cur_req != NULL) {
         if (strncmp(cur_req->url, key, strlen(key) + 1) == 0) {
             time_t cur_time = time(NULL);
@@ -290,10 +290,13 @@ cache_data_status get_cache(char* key, char* buffer, int buffer_size, int conten
                 save_pthread_spin_unlock(&hash_basket->lock);
                 return CACHE_ERR;
             }
-            double time_diff = (double)(cur_req->load_time - cur_time);
+            double time_diff = (double)(cur_time - cur_req->load_time);
+            printf("time_diff %lf \n", time_diff);
             if (cache_ttl_s != 0 &&  time_diff >= cache_ttl_s) {
                 free_mem(cur_req->content);
-                free_mem(cur_req->url);
+                cur_req->content_offset = 0;
+                cur_req->data_status = HAVE_WRITER;
+                cur_req->wait_l = NULL;
                 save_pthread_spin_unlock(&hash_basket->lock);
                 return NO_DATA;
             }

@@ -16,7 +16,7 @@
 #define MAX_CACHE_MAX_SIZE (size_t)10 * 1024 * 1024 * 1024 // 10gb
 
 #define MIN_CACHE_TTL 0 // 0 - not_ttl, in seconds
-#define MAX_CACHE_TTL (unsigned int)1024 * 1024 * 1024 * 4 // max uint32
+#define MAX_CACHE_TTL (unsigned int)1024 * 1024 * 1024 * 4 - 1// max uint32
 
 #define HASH_TABLE_SIZE 10000
 #define HASH_PARAM HASH_TABLE_SIZE - 1
