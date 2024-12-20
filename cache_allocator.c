@@ -23,6 +23,9 @@ char* alloc_mem(unsigned int size) {
 }
 
 void free_mem(char* mem) {
+    if (mem == NULL) {
+        return;
+    }
     uint32_t size_seg = *(uint32_t*)(mem - 4);
     memset((mem - 4), 0, size_seg);
 }
