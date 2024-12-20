@@ -40,7 +40,7 @@ int resolve_domain(const char* hostname, struct sockaddr_in* sockaddr) {
     hints.ai_socktype = SOCK_STREAM;
     int status;
     if ((status = getaddrinfo(hostname, NULL, &hints, &res)) != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
+        fprintf(stderr, "getaddrinfo: %s %s\n", gai_strerror(status), hostname);
         return -1;
     }
     if (res->ai_family == AF_INET) {
