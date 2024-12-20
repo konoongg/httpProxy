@@ -141,6 +141,12 @@ int free_conn_info(conn_info* conn) {
     };
     conn->type = ACCEPT;
     if (conn->cache_i != NULL) {
+        if (!conn->cache_i->finish_write) {
+            int err = free_cache_req(conn->cache_i->cache_key);
+            if (err != 0) {
+                printf("free_cache_req error \n");
+            }
+        }
         save_free(conn->cache_i->cache_key);
         if (conn->cache_i->pipe_open) {
             int err = close(conn->cache_i->pipe_fd[0]);
@@ -215,6 +221,7 @@ int conn_init(conn_info* conn_i) {
         conn_i->cache_i->count_write = 0;
         conn_i->cache_i->write_without_cache = 0;
         conn_i->cache_i->pipe_open = false;
+        conn_i->cache_i->finish_write = false;
     }
     return 0;
 }
@@ -416,6 +423,7 @@ int init_signals() {
 
 
 int create_server_connect(conn_info* conn, struct io_uring* ring) {
+    printf("create_server_connect\n");
     connection* client = conn->client;
     int err = resolve_domain(client->http->host, conn->sockaddr);
     if (err == -1) {
@@ -438,11 +446,12 @@ int create_server_connect(conn_info* conn, struct io_uring* ring) {
     if (err != 0) {
         return  -1;
     }
+    printf("fnish create_server_connect\n");
     return 0;
 }
 
 proc_status proccess_accept(int res, conn_info* conn, struct io_uring* ring, conn_info* conns) {
-    printf("proccess_accept\n");
+    //printf("proccess_accept\n");
     if (shutdown_with_wait) {
         free_conn_info(conn);
         return PROC_CON;
@@ -464,25 +473,19 @@ proc_status proccess_accept(int res, conn_info* conn, struct io_uring* ring, con
 }
 
 proc_status proccess_cache(conn_info* conn, struct io_uring* ring) {
-
-   // printf("proccess_cache\n");
+    //printf("proccess_cache\n");
     connection* server = conn->server;
     cache_data_status status =  get_cache(conn->cache_i->cache_key, server->http_mes_buffer, MAX_HTTP_SIZE, conn->cache_i->count_write, &server->size_http_res);
-    printf("status %d %d\n", status, gettid());
+    //printf("status %d %d\n", status, gettid());
     if (status == NO_DATA || status == CACHE_ERR ) {
+        conn->cache_i->read_from_cache = false;
+        conn->server->size_http_res = 0;
         //printf("NO DATA \n");
         int err = create_server_connect(conn, ring);
         if (err == -1) {
             return PROC_ERR;
         }
-    } else if (status == NO_WRITER) {
-        conn->cache_i->read_from_cache = false;
-        int err = create_server_connect(conn, ring);
-        if (err == -1) {
-            return PROC_ERR;
-        }
     } else if (status == HAVE_WRITER) {
-
         int err = pipe(conn->cache_i->pipe_fd);
         if (err == -1) {
             fprintf(stderr, "pipe error: %s", strerror(errno));
@@ -587,11 +590,12 @@ proc_status proccess_write_to_serv(int res, conn_info* conn, struct io_uring* ri
             }
         }
     }
+    //printf("finish proccess_write_to_serv \n");
     return PROC_OK;
 }
 
 int do_write(conn_info* conn, struct io_uring* ring) {
-    //printf("do_write\n");
+   // printf("do_write\n");
     int yet_write = conn->cache_i->write_without_cache - conn->cache_i->count_write;
     conn->cache_i->write_without_cache += conn->server->size_http_res;
     if (yet_write > 0 || conn->cache_i->count_write == 0) {
@@ -662,6 +666,7 @@ proc_status proccess_read_serv_body(int res, conn_info* conn, struct io_uring* r
             return PROC_ERR;
         }
     }
+    //printf("finish proccess_read_serv_body res %d\n", res);
     return PROC_OK;
 }
 
@@ -703,6 +708,9 @@ proc_status proccess_read_serv_head(int res, conn_info* conn, struct io_uring* r
             }
         } else if (status == ERR) {
             return PROC_ERR;
+        } else if (status == FULL_BUFFER) {
+            printf("so big http head \n");
+            return PROC_ERR;
         }
     }
     return PROC_OK;
@@ -718,6 +726,7 @@ proc_status proccess_write(int res, conn_info* conn, struct io_uring* ring) {
         assert(need_write >= 0);
         connection* server = conn->server;
         if (need_write == 0 && server->need_send_size == 0) {
+            conn->cache_i->finish_write = true;
             free_conn_info(conn);
             printf("FINISH CONNECT WRITE DATA  %d\n", res);
             if (shutdown_with_wait) {

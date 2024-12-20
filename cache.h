@@ -24,7 +24,6 @@
 typedef enum {
     DATA,
     HAVE_WRITER,
-    NO_WRITER,
     NO_DATA,
     CACHE_ERR,
     FINISH
@@ -57,6 +56,7 @@ int add_cache_content(char* key, char* content, int content_size);
 int add_cache_req(char* key, int content_size);
 int add_cache_cd(char* key, int fd);
 cache_data_status get_cache(char* key, char* buffer, int buffer_size, int content_offset, int* count_data);
+int free_cache_req(char* key);
 int finish_cache();
 
 #endif

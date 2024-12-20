@@ -70,6 +70,7 @@ typedef struct cache_info {
     int pipe_fd[2]; // wait sym w - wake up (need check cache), b - broke (need start load)
     char cache_wake_up;
     bool pipe_open;
+    bool finish_write;
 } cache_info;
 
 typedef struct conn_info {
