@@ -20,6 +20,7 @@
 
 #define HASH_TABLE_SIZE 10000
 #define HASH_PARAM HASH_TABLE_SIZE - 1
+#define FREE_CACHE_PERC 0.9
 
 typedef enum {
     DATA,

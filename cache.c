@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdatomic.h>
 #include <unistd.h>
 
 #include "cache.h"
@@ -10,6 +11,10 @@
 
 cache_bascket** cache = NULL;
 int cache_ttl_s;
+atomic_int cache_full_size = 0;
+atomic_int cache_free_size = 0;
+atomic_int evic = 0;
+
 
 #define save_pthread_spin_lock(lock) \
     err = pthread_spin_lock(lock); \
@@ -25,8 +30,104 @@ int cache_ttl_s;
 	    return -1; \
     }
 
+
+void* cache_evic() {
+    printf("start cache_evic \n");
+    for (int scale = 1; scale < 4; ++scale) {
+        int cur_ttl = cache_ttl_s / scale;
+        for (int i = 0; i < HASH_TABLE_SIZE; ++i) {
+            cache_bascket* hash_basket = cache[i];
+
+            int err;
+            err = pthread_spin_lock(&hash_basket->lock);
+            if (err != 0) { \
+                fprintf(stderr, "pthread_spin_lock() failed: %s\n", strerror(err));
+                return NULL;
+            }
+
+            cache_req* cur_req = hash_basket->first;
+            cache_req* prev_req = NULL;
+
+            while (cur_req != NULL) {
+                time_t cur_time = time(NULL);
+                if (cur_time == (time_t) -1) {
+                    fprintf(stderr, "get_cache: can't get current time %s\n", strerror(errno));
+                    evic = 0;
+
+                    err = pthread_spin_unlock(&hash_basket->lock);
+                    if (err != 0) { \
+                        fprintf(stderr, "pthread_spin_unlock() failed: %s\n", strerror(err));
+                        return NULL;
+                    }
+
+                    return NULL;
+                }
+                double time_diff = (double)(cur_time - cur_req->load_time);
+                printf("cur_ttl(%d) time_diff(%lf) \n", cur_ttl, time_diff);
+                if (cur_ttl < time_diff) {
+                    printf("EVIC CLEAR %s\n", cur_req->url);
+                    free_mem(cur_req->url);
+                    free_mem(cur_req->content);
+                    cache_free_size += strlen(cur_req->url) + 1 + 4;
+
+                    if (cur_req->content != NULL) {
+                        cache_free_size += strlen(cur_req->content) + 1 + 4;
+                    }
+                    printf("prev_req %p cur_req %p cur_req->next %p\n", prev_req, cur_req, cur_req->next);
+                    if (prev_req == NULL) {
+                        hash_basket->last = hash_basket->first = cur_req->next;
+                    } else {
+                        prev_req->next = cur_req->next;
+                    }
+                    cache_req* node = cur_req->next;
+                    free(cur_req);
+                    cur_req = node;
+                    continue;
+                }
+                prev_req = cur_req;
+                cur_req = cur_req->next;
+            }
+            err = pthread_spin_unlock(&hash_basket->lock);
+            if (err != 0) { \
+                fprintf(stderr, "pthread_spin_unlock() failed: %s\n", strerror(err));
+                return NULL;
+            }
+        }
+
+        double cur_free_cache_perc = cache_free_size / cache_full_size;
+        if (cur_free_cache_perc >= FREE_CACHE_PERC) {
+            evic = 1;
+            return NULL;
+        }
+    }
+    evic = 0;
+    return NULL;
+}
+
+
+int check_cache_evic() {
+    printf("check_cache_evic \n");
+    double cur_free_cache_perc = cache_free_size / cache_full_size;
+    if (cur_free_cache_perc < FREE_CACHE_PERC && evic == 0) {
+        evic = 1;
+        pthread_t tid;
+        int err = pthread_create(&tid, NULL, cache_evic, NULL);
+        if (err) {
+            fprintf(stderr, "pthread_create() failed: %s\n", strerror(err));
+            return -1;
+        }
+        err = pthread_detach(tid);
+        if (err){
+           printf("main: pthread_detach() failed: %s\n", strerror(err));
+           return -1;
+        }
+    }
+    return 0;
+}
+
 int init_cache(size_t cache_size, int ttl_s) {
     cache_ttl_s = ttl_s;
+    cache_free_size = cache_full_size = cache_size;
     int err = init_alloc(cache_size);
     if (err == -1) {
         return -1;
@@ -149,11 +250,13 @@ int add_cache_req(char* key, int content_size) {
             cur_req->next = NULL;
             cur_req->content = alloc_mem(content_size + 1);
             cur_req->content_size = content_size;
+            cache_free_size  -= content_size + 1 + 4; // content + size
             if (cur_req->content == NULL) {
                 free_mem(cur_req->url);
+                cache_free_size += strlen(cur_req->url) + 1 + 4;
                 send_wake_up(cur_req);
                 if (prev_req == NULL) {
-                    hash_basket->first = cur_req->next;
+                    hash_basket->last = hash_basket->first = cur_req->next;
                 } else {
                     prev_req->next = cur_req->next;
                 }
@@ -161,6 +264,12 @@ int add_cache_req(char* key, int content_size) {
                 save_pthread_spin_unlock(&hash_basket->lock);
                 return -1;
             }
+            err = check_cache_evic();
+            if (err != 0) {
+                save_pthread_spin_unlock(&hash_basket->lock);
+                return -1;
+            }
+            printf("hash_basket->last %p\n", hash_basket->last);
             hash_basket->last->data_status = HAVE_WRITER;
             save_pthread_spin_unlock(&hash_basket->lock);
             return 0;
@@ -246,9 +355,13 @@ int free_cache_req(char* key) {
         if (strncmp(cur_req->url, key, strlen(key) + 1) == 0) {
             free_mem(cur_req->url);
             free_mem(cur_req->content);
+            cache_free_size += strlen(cur_req->url) + 1 + 4;
+            if (cur_req->content != NULL) {
+                cache_free_size += strlen(cur_req->content) + 1 + 4;
+            }
             int err = send_wake_up(cur_req);
             if (prev_req == NULL) {
-                hash_basket->first = cur_req->next;
+                hash_basket->last = hash_basket->first = cur_req->next;
             } else {
                 prev_req->next = cur_req->next;
             }
@@ -266,7 +379,7 @@ int free_cache_req(char* key) {
 cache_data_status get_cache(char* key, char* buffer, int buffer_size, int content_offset, int* count_data) {
     uint32_t hash =  hash_function_horner(key);
     cache_bascket* hash_basket = cache[hash];
-
+    printf("hash %d \n", hash);
     if (hash_basket == NULL) {
         fprintf(stderr, "hash_basket is null\n");
         return CACHE_ERR;
@@ -283,6 +396,7 @@ cache_data_status get_cache(char* key, char* buffer, int buffer_size, int conten
             return CACHE_ERR;
         }
         hash_basket->last->url = alloc_mem(strlen(key) + 1);
+        cache_free_size  -= strlen(key) + 1 + 4; // content + size
         if (hash_basket->last->url == NULL) {
             save_pthread_spin_unlock(&hash_basket->lock);
             return CACHE_ERR;
@@ -319,6 +433,9 @@ cache_data_status get_cache(char* key, char* buffer, int buffer_size, int conten
             double time_diff = (double)(cur_time - cur_req->load_time);
             if (cache_ttl_s != 0 &&  time_diff >= cache_ttl_s) {
                 free_mem(cur_req->content);
+                if (cur_req->content != NULL) {
+                    cache_free_size += strlen(cur_req->content) + 1 + 4;
+                }
                 cur_req->content = NULL;
                 cur_req->content_offset = 0;
                 cur_req->load_time = cur_time;
@@ -351,29 +468,31 @@ cache_data_status get_cache(char* key, char* buffer, int buffer_size, int conten
         cur_req = cur_req->next;
     }
 
-    prev_req = (cache_req*)malloc(sizeof(cache_req));
-    if (prev_req == NULL) {
+    prev_req->next = (cache_req*)malloc(sizeof(cache_req));
+    if (prev_req->next == NULL) {
         fprintf(stderr, "malloc error: can't alloc memmory %s\n", strerror(errno));
         save_pthread_spin_unlock(&hash_basket->lock);
         return CACHE_ERR;
     }
-    prev_req->url = alloc_mem(strlen(key) + 1);
-    if (prev_req->url == NULL) {
+    prev_req->next->url = alloc_mem(strlen(key) + 1);
+    cache_free_size  -= strlen(key) + 1 + 4;
+    if (prev_req->next->url == NULL) {
         save_pthread_spin_unlock(&hash_basket->lock);
         return CACHE_ERR;
     }
-    memcpy(prev_req->url, key, strlen(key) + 1);
-    prev_req->content_offset = 0;
-    prev_req->content = NULL;
-    prev_req->data_status = HAVE_WRITER;
-    prev_req->wait_l = NULL;
-    prev_req->next = NULL;
+    memcpy(prev_req->next->url, key, strlen(key) + 1);
+    prev_req->next->content_offset = 0;
+    prev_req->next->content = NULL;
+    prev_req->next->data_status = HAVE_WRITER;
+    prev_req->next->wait_l = NULL;
+    prev_req->next->next = NULL;
     save_pthread_spin_unlock(&hash_basket->lock);
     return NO_DATA;
 }
 
 
 int finish_cache() {
+    printf("finish cache \n");
     for (int i = 0; i < HASH_TABLE_SIZE; ++i) {
         cache_bascket* bascket = cache[i];
         if (bascket != NULL) {
