@@ -10,7 +10,7 @@ size_t memmory_size = 0;
 
 char* alloc_mem(unsigned int size) {
     int i = 0;
-    while (i < memmory_size) {
+    while (i + size < memmory_size) {
         unsigned int* size_seg = (unsigned int*)(memmory + i);
         if (*size_seg == 0) {
             *size_seg = size;

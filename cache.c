@@ -101,6 +101,7 @@ int add_cache_content(char* key, char* content, int content_size) {
                 save_pthread_spin_unlock(&hash_basket->lock);
                 return -1;
             }
+            printf("cur_req->content %p \n", cur_req->content );
             memcpy(cur_req->content + cur_req->content_offset, content, content_size);
             cur_req->content_offset += content_size;
             cur_req->content[cur_req->content_offset] = '\0';
@@ -135,6 +136,7 @@ int add_cache_req(char* key, int content_size) {
     save_pthread_spin_lock(&hash_basket->lock);
 
     cache_req* cur_req = hash_basket->first;
+    cache_req* prev_req = NULL;
     while (cur_req != NULL) {
         if (strncmp(cur_req->url, key, strlen(key) + 1) == 0) {
             cur_req->content_offset = 0;
@@ -149,6 +151,13 @@ int add_cache_req(char* key, int content_size) {
             cur_req->content_size = content_size;
             if (cur_req->content == NULL) {
                 free_mem(cur_req->url);
+                send_wake_up(cur_req);
+                if (prev_req == NULL) {
+                    hash_basket->first = cur_req->next;
+                } else {
+                    prev_req->next = cur_req->next;
+                }
+                free(cur_req);
                 save_pthread_spin_unlock(&hash_basket->lock);
                 return -1;
             }
@@ -156,6 +165,8 @@ int add_cache_req(char* key, int content_size) {
             save_pthread_spin_unlock(&hash_basket->lock);
             return 0;
         }
+        prev_req = cur_req;
+        cur_req = cur_req->next;
     }
     save_pthread_spin_unlock(&hash_basket->lock);
     return -1;

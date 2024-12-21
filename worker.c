@@ -669,7 +669,7 @@ proc_status proccess_read_serv_body(int res, conn_info* conn, struct io_uring* r
 }
 
 proc_status proccess_read_serv_head(int res, conn_info* conn, struct io_uring* ring) {
-    //printf("proccess_read_serv_head res %d\n", res);
+    printf("proccess_read_serv_head res %d\n", res);
     if (res < 0) {
         fprintf(stderr, "READ failed, disconnect %s\n", strerror(-res));
         return PROC_ERR;
@@ -686,7 +686,6 @@ proc_status proccess_read_serv_head(int res, conn_info* conn, struct io_uring* r
                 int err = add_cache_req(conn->cache_i->cache_key, http_mes_all_size);
                 if (err != 0) {
                     fprintf(stderr, "Failed to write the request header to the cache \n");
-                    return PROC_ERR;
                 }
             }
             int new_res = res - conn->server->size_http_res;
@@ -715,7 +714,7 @@ proc_status proccess_read_serv_head(int res, conn_info* conn, struct io_uring* r
 }
 
 proc_status proccess_write(int res, conn_info* conn, struct io_uring* ring) {
-    //printf("proccess_write %d\n", res);
+    printf("proccess_write %d\n", res);
     if (res < 0) {
         fprintf(stderr, "WRITE failed %s\n", strerror(-res));
         return PROC_ERR;
